@@ -24,7 +24,6 @@ func NewClient(ctx context.Context, addr string, tlsConf *tls.Config, quicConf *
 		for {
 			req := protocol.KeepaliveRequest()
 
-			fmt.Println("before open stream")
 			str, err := conn.OpenStream()
 			if err != nil {
 				log.Println(err)
@@ -32,13 +31,11 @@ func NewClient(ctx context.Context, addr string, tlsConf *tls.Config, quicConf *
 			}
 			defer str.Close()
 
-			fmt.Println("after open stream")
 			if err := protocol.Write(req, str); err != nil {
 				log.Println(err)
 			}
 			str.Close()
 
-			fmt.Println("write keepalive")
 			_, err = io.ReadAll(str)
 			if err != nil {
 				log.Println(err)

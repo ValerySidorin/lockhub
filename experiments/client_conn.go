@@ -8,7 +8,9 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"log"
+	"log/slog"
 	"math/big"
+	"os"
 	"time"
 
 	"github.com/ValerySidorin/lockhub/client"
@@ -19,7 +21,8 @@ const addr = "localhost:4242"
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() { log.Fatal(server.ListenAndServe(ctx, addr, generateTLSConfig(), nil)) }()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	go func() { log.Fatal(server.ListenAndServe(ctx, addr, generateTLSConfig(), nil, logger)) }()
 
 	_, err := client.NewClient(ctx, addr, generateTLSConfig(), nil)
 	if err != nil {
