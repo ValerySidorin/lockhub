@@ -17,7 +17,7 @@ import (
 	"github.com/ValerySidorin/lockhub/server"
 )
 
-const addr = "localhost:4242"
+const addr = "localhost:13796"
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())

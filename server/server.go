@@ -20,9 +20,13 @@ func ListenAndServe(ctx context.Context, addr string,
 	}
 	defer ln.Close()
 
+	logger.Info("lockhub server started")
+	defer logger.Info("lockub server stopped")
+
 	for {
 		select {
 		case <-ctx.Done():
+
 			return nil
 		default:
 			conn, err := ln.Accept(ctx)
