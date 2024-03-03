@@ -10,8 +10,9 @@ import (
 type Command byte
 
 const (
-	KeepaliveCommand Command = iota + 1
-	SomeOtherCommand
+	UnknownCommand Command = iota
+	KeepaliveCommand
+	LockCommand
 )
 
 type Request struct {
@@ -26,13 +27,6 @@ func (r *Request) Bytes() []byte {
 	res = append(res, payloadLenBuf...)
 	res = append(res, r.Payload...)
 	return res
-}
-
-func KeepaliveRequest(clientID string) Request {
-	return Request{
-		Cmd:     KeepaliveCommand,
-		Payload: []byte(clientID),
-	}
 }
 
 func Read(r io.Reader) (Request, error) {

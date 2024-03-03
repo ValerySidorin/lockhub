@@ -18,8 +18,12 @@ func (s *Server) handleRequest(req protocol.Request) error {
 	}
 }
 
-func (s *Server) handleKeepaliveCommand(payload []byte) error {
-	sess := dto.Session{ClientID: string(payload)}
+func (s *Server) handleKeepaliveCommand(p []byte) error {
+	keepalive, err := protocol.NewKeepalive(p)
+	if err != nil {
+		return fmt.Errorf("new keepalive: %w", err)
+	}
+	sess := dto.Session{ClientID: keepalive.ClientID}
 	if err := s.store.SetSession(sess,
 		s.conf.KeepaliveInterval+s.conf.SessionRetentionPeriod); err != nil {
 		return fmt.Errorf("set session: %w", err)

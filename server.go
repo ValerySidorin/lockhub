@@ -45,7 +45,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 			go func() {
 				if err := s.handleConn(conn); err != nil {
-					s.l.Error("handle conn", err)
+					s.l.Error(fmt.Errorf("handle conn: %w", err).Error())
 				}
 			}()
 		}
@@ -77,7 +77,7 @@ func (s *Server) handleConn(conn quic.Connection) error {
 
 			go func() {
 				if err := s.handleStream(str); err != nil {
-					s.l.Error("handle stream", err)
+					s.l.Error(fmt.Errorf("handle stream: %w", err).Error())
 				}
 			}()
 		}

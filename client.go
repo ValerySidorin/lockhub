@@ -26,8 +26,6 @@ func NewClient(ctx context.Context, conf *ClientConfig) (*Client, error) {
 
 	go func() {
 		for {
-			req := protocol.KeepaliveRequest(conf.ClientID)
-
 			str, err := conn.OpenStream()
 			if err != nil {
 				log.Println(err)
@@ -35,8 +33,14 @@ func NewClient(ctx context.Context, conf *ClientConfig) (*Client, error) {
 			}
 			defer str.Close()
 
+			req := protocol.Request{
+				Cmd:     protocol.KeepaliveCommand,
+				Payload: protocol.Keepalive{ClientID: conf.ClientID}.Bytes(),
+			}
+
 			if err := protocol.Write(req, str); err != nil {
 				log.Println(err)
+				return
 			}
 			str.Close()
 
