@@ -1,8 +1,7 @@
-package client
+package lockhub
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"log"
@@ -12,17 +11,22 @@ import (
 )
 
 type Client struct {
+	conf *ClientConfig
 }
 
-func NewClient(ctx context.Context, addr string, tlsConf *tls.Config, quicConf *quic.Config) (*Client, error) {
-	conn, err := quic.DialAddr(ctx, addr, tlsConf, quicConf)
+func NewClient(ctx context.Context, conf *ClientConfig) (*Client, error) {
+	if err := conf.Validate(); err != nil {
+		return nil, fmt.Errorf("validate client config: %w", err)
+	}
+
+	conn, err := quic.DialAddr(ctx, conf.Addr, conf.TLS, conf.QUIC)
 	if err != nil {
 		return nil, fmt.Errorf("dial quic: %w", err)
 	}
 
 	go func() {
 		for {
-			req := protocol.KeepaliveRequest()
+			req := protocol.KeepaliveRequest(conf.ClientID)
 
 			str, err := conn.OpenStream()
 			if err != nil {

@@ -28,9 +28,10 @@ func (r *Request) Bytes() []byte {
 	return res
 }
 
-func KeepaliveRequest() Request {
+func KeepaliveRequest(clientID string) Request {
 	return Request{
-		Cmd: KeepaliveCommand,
+		Cmd:     KeepaliveCommand,
+		Payload: []byte(clientID),
 	}
 }
 
@@ -52,7 +53,7 @@ func Read(r io.Reader) (Request, error) {
 	payloadLenBytes := data[1:9]
 	payloadLen := binary.LittleEndian.Uint64(payloadLenBytes)
 	if payloadLen > 0 {
-		req.Payload = data[9:payloadLen]
+		req.Payload = data[9 : payloadLen+9]
 	}
 
 	return req, nil

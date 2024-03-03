@@ -13,18 +13,29 @@ import (
 	"os"
 	"time"
 
-	"github.com/ValerySidorin/lockhub/client"
-	"github.com/ValerySidorin/lockhub/server"
+	"github.com/ValerySidorin/lockhub"
 )
 
 const addr = "localhost:13796"
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
+	serverConf := &lockhub.ServerConfig{
+		Addr:                   addr,
+		TLS:                    generateTLSConfig(),
+		KeepaliveInterval:      12 * time.Second,
+		SessionRetentionPeriod: 5 * time.Minute,
+	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	go func() { log.Fatal(server.ListenAndServe(ctx, addr, generateTLSConfig(), nil, logger)) }()
+	store := lockhub.NewInmemStore()
+	go func() { log.Fatal(lockhub.ListenAndServe(ctx, serverConf, store, logger)) }()
 
-	_, err := client.NewClient(ctx, addr, generateTLSConfig(), nil)
+	clientConf := &lockhub.ClientConfig{
+		Addr:     addr,
+		ClientID: "12345",
+		TLS:      &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"lockhub"}},
+	}
+	_, err := lockhub.NewClient(ctx, clientConf)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -53,6 +64,6 @@ func generateTLSConfig() *tls.Config {
 	return &tls.Config{
 		InsecureSkipVerify: true,
 		Certificates:       []tls.Certificate{tlsCert},
-		NextProtos:         []string{"quic-lockhub"},
+		NextProtos:         []string{"lockhub"},
 	}
 }
