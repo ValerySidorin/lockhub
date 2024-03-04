@@ -2,9 +2,11 @@ package lockhub
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
+	"github.com/ValerySidorin/lockhub/internal/dto"
 	"github.com/ValerySidorin/lockhub/internal/protocol"
 	"github.com/quic-go/quic-go"
 )
@@ -44,7 +46,14 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			}
 
 			go func() {
-				if err := s.handleConn(conn); err != nil {
+				session, err := s.handleConnect(conn)
+				if err != nil {
+					s.l.Error("handle connect", err)
+					return
+				}
+				s.l.Debug("client connected", "client_id", session.ClientID)
+
+				if err := s.handleConn(session, conn); err != nil {
 					s.l.Error(fmt.Errorf("handle conn: %w", err).Error())
 				}
 			}()
@@ -64,7 +73,7 @@ func ListenAndServe(ctx context.Context, conf *ServerConfig, store Storer,
 	return srv.ListenAndServe(ctx)
 }
 
-func (s *Server) handleConn(conn quic.Connection) error {
+func (s *Server) handleConn(session *dto.Session, conn quic.Connection) error {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -76,7 +85,7 @@ func (s *Server) handleConn(conn quic.Connection) error {
 			}
 
 			go func() {
-				if err := s.handleStream(str); err != nil {
+				if err := s.handleStream(session, str); err != nil {
 					s.l.Error(fmt.Errorf("handle stream: %w", err).Error())
 				}
 			}()
@@ -84,16 +93,53 @@ func (s *Server) handleConn(conn quic.Connection) error {
 	}
 }
 
-func (s *Server) handleStream(stream quic.Stream) error {
+func (s *Server) handleStream(session *dto.Session, stream quic.Stream) error {
 	defer stream.Close()
-	req, err := protocol.Read(stream)
+	req, err := protocol.ReadRequest(stream)
 	if err != nil {
 		return fmt.Errorf("read request: %w", err)
 	}
 
-	if err := s.handleRequest(req); err != nil {
+	if err := s.handleRequest(session, req); err != nil {
 		return fmt.Errorf("handle request: %w", err)
 	}
 
 	return nil
+}
+
+func (s *Server) handleConnect(conn quic.Connection) (*dto.Session, error) {
+	resp := &protocol.Response{}
+	stream, err := conn.AcceptStream(s.ctx)
+	if err != nil {
+		return nil, fmt.Errorf("accept stream: %w", err)
+	}
+	defer func(resp *protocol.Response) {
+		if err := protocol.WriteResponse(resp, stream); err != nil {
+			s.l.Error(fmt.Errorf("write response: %w", err).Error())
+		}
+		stream.Close()
+	}(resp)
+
+	req, err := protocol.ReadRequest(stream)
+	if err != nil {
+		return nil, fmt.Errorf("read req: %w", err)
+	}
+
+	if req.Cmd != protocol.ConnectCommand {
+		return nil, errors.New("invalid connect command")
+	}
+
+	connect, err := protocol.NewConnect(req.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("read connect: %w", err)
+	}
+
+	sess, err := s.store.GetOrCreateSession(connect.ClientID,
+		s.conf.KeepaliveInterval+s.conf.SessionRetentionPeriod)
+	if err != nil {
+		return nil, fmt.Errorf("get session: %w", err)
+	}
+
+	resp.Success = true
+	return sess, nil
 }

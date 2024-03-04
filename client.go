@@ -2,6 +2,7 @@ package lockhub
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -24,6 +25,30 @@ func NewClient(ctx context.Context, conf *ClientConfig) (*Client, error) {
 		return nil, fmt.Errorf("dial quic: %w", err)
 	}
 
+	stream, err := conn.OpenStream()
+	if err != nil {
+		return nil, fmt.Errorf("open stream: %w", err)
+	}
+	defer stream.Close()
+
+	req := protocol.Request{
+		Cmd:     protocol.ConnectCommand,
+		Payload: protocol.Connect{ClientID: conf.ClientID}.Bytes(),
+	}
+	if err := protocol.WriteRequest(req, stream); err != nil {
+		return nil, fmt.Errorf("write connect request: %w", err)
+	}
+	stream.Close()
+
+	resp, err := protocol.ReadResponse(stream)
+	if err != nil {
+		return nil, fmt.Errorf("read connect response: %w", err)
+	}
+
+	if !resp.Success {
+		return nil, errors.New("connect response unsuccessful")
+	}
+
 	go func() {
 		for {
 			str, err := conn.OpenStream()
@@ -35,10 +60,10 @@ func NewClient(ctx context.Context, conf *ClientConfig) (*Client, error) {
 
 			req := protocol.Request{
 				Cmd:     protocol.KeepaliveCommand,
-				Payload: protocol.Keepalive{ClientID: conf.ClientID}.Bytes(),
+				Payload: protocol.Connect{ClientID: conf.ClientID}.Bytes(),
 			}
 
-			if err := protocol.Write(req, str); err != nil {
+			if err := protocol.WriteRequest(req, str); err != nil {
 				log.Println(err)
 				return
 			}
@@ -51,5 +76,5 @@ func NewClient(ctx context.Context, conf *ClientConfig) (*Client, error) {
 		}
 	}()
 
-	return &Client{}, nil
+	return &Client{conf: conf}, nil
 }

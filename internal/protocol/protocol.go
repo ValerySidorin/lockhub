@@ -11,6 +11,7 @@ type Command byte
 
 const (
 	UnknownCommand Command = iota
+	ConnectCommand
 	KeepaliveCommand
 	LockCommand
 )
@@ -20,16 +21,25 @@ type Request struct {
 	Payload []byte
 }
 
+type Response struct {
+	Success bool
+}
+
 func (r *Request) Bytes() []byte {
+	res := []byte{byte(r.Cmd)}
+
+	if r.Payload == nil {
+		return res
+	}
+
 	payloadLenBuf := make([]byte, 8)
 	binary.LittleEndian.PutUint64(payloadLenBuf, uint64(len(r.Payload)))
-	res := []byte{byte(r.Cmd)}
 	res = append(res, payloadLenBuf...)
 	res = append(res, r.Payload...)
 	return res
 }
 
-func Read(r io.Reader) (Request, error) {
+func ReadRequest(r io.Reader) (Request, error) {
 	var req Request
 
 	data, err := io.ReadAll(r)
@@ -42,6 +52,9 @@ func Read(r io.Reader) (Request, error) {
 
 	// Read cmd
 	req.Cmd = Command(data[0])
+	if len(data) == 1 {
+		return req, nil
+	}
 
 	// Read payload
 	payloadLenBytes := data[1:9]
@@ -53,14 +66,43 @@ func Read(r io.Reader) (Request, error) {
 	return req, nil
 }
 
-func Write(req Request, w io.Writer) error {
-	switch req.Cmd {
-	case KeepaliveCommand:
-		if _, err := w.Write(req.Bytes()); err != nil {
-			return fmt.Errorf("write keepalive cmd: %w", err)
-		}
-	default:
-		return errors.New("invalid command")
+func WriteRequest(req Request, w io.Writer) error {
+	if _, err := w.Write(req.Bytes()); err != nil {
+		return fmt.Errorf("write to stream: %w", err)
+	}
+
+	return nil
+}
+
+func (r *Response) Bytes() []byte {
+	var boolByte byte
+	if r.Success {
+		boolByte = 1
+	} else {
+		boolByte = 0
+	}
+	return []byte{byte(boolByte)}
+}
+
+func ReadResponse(r io.Reader) (Response, error) {
+	var resp Response
+
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return resp, fmt.Errorf("read bytes: %w", err)
+	}
+
+	if len(data) == 0 {
+		return resp, errors.New("empty response")
+	}
+
+	resp.Success = data[0]%2 == 1
+	return resp, nil
+}
+
+func WriteResponse(resp *Response, w io.Writer) error {
+	if _, err := w.Write(resp.Bytes()); err != nil {
+		return fmt.Errorf("write resp: %w", err)
 	}
 
 	return nil

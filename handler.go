@@ -9,26 +9,21 @@ import (
 	"github.com/ValerySidorin/lockhub/internal/protocol"
 )
 
-func (s *Server) handleRequest(req protocol.Request) error {
+func (s *Server) handleRequest(session *dto.Session, req protocol.Request) error {
 	switch req.Cmd {
 	case protocol.KeepaliveCommand:
-		return s.handleKeepaliveCommand(req.Payload)
+		return s.handleKeepaliveCommand(session)
 	default:
 		return errors.New("unknown command")
 	}
 }
 
-func (s *Server) handleKeepaliveCommand(p []byte) error {
-	keepalive, err := protocol.NewKeepalive(p)
-	if err != nil {
-		return fmt.Errorf("new keepalive: %w", err)
-	}
-	sess := dto.Session{ClientID: keepalive.ClientID}
-	if err := s.store.SetSession(sess,
+func (s *Server) handleKeepaliveCommand(session *dto.Session) error {
+	if err := s.store.SetSessionTTL(session.ClientID,
 		s.conf.KeepaliveInterval+s.conf.SessionRetentionPeriod); err != nil {
 		return fmt.Errorf("set session: %w", err)
 	}
-	s.l.Info("updated session", "client_id", sess.ClientID)
+	s.l.Debug("session prolonged", "client_id", session.ClientID)
 	time.Sleep(s.conf.KeepaliveInterval)
 	return nil
 }

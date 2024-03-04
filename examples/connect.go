@@ -26,8 +26,10 @@ func main() {
 		KeepaliveInterval:      12 * time.Second,
 		SessionRetentionPeriod: 5 * time.Minute,
 	}
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	store := lockhub.NewInmemStore()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+	store := lockhub.NewInmemStore(logger)
 	go func() { log.Fatal(lockhub.ListenAndServe(ctx, serverConf, store, logger)) }()
 
 	clientConf := &lockhub.ClientConfig{
