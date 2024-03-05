@@ -47,3 +47,12 @@ func EncodeUint64(val uint64) []byte {
 	binary.LittleEndian.PutUint64(res, val)
 	return res
 }
+
+func DecodeUint64(p []byte) (uint64, []byte, error) {
+	if len(p) < 8 {
+		return 0, p, errors.New("invalid buf: len")
+	}
+	uint64Bytes := p[:8]
+	res := binary.LittleEndian.Uint64(uint64Bytes)
+	return res, p[8:], nil
+}

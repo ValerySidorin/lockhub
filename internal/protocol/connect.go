@@ -9,6 +9,6 @@ func NewConnect(payload []byte) (Connect, error) {
 	return Connect{ClientID: clientID}, err
 }
 
-func (k Connect) Bytes() []byte {
-	return EncodeString(k.ClientID)
+func (r Connect) Bytes() []byte {
+	return EncodeString(r.ClientID)
 }

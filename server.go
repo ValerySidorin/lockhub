@@ -12,7 +12,7 @@ import (
 )
 
 type Server struct {
-	conf  *ServerConfig
+	conf  ServerConfig
 	store Storer
 	l     *slog.Logger
 	ctx   context.Context
@@ -30,7 +30,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 	defer ln.Close()
 
-	s.l.Info("lockhub server started")
+	s.l.Info("lockhub server started", "addr", ln.Addr())
 	defer s.l.Info("lockub server stopped")
 
 	for {
@@ -41,14 +41,14 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		default:
 			conn, err := ln.Accept(ctx)
 			if err != nil {
-				s.l.Error("accept", err)
+				s.l.Error(fmt.Errorf("accept conn: %w", err).Error())
 				continue
 			}
 
 			go func() {
 				session, err := s.handleConnect(conn)
 				if err != nil {
-					s.l.Error("handle connect", err)
+					s.l.Error(fmt.Errorf("handle connect: %w", err).Error())
 					return
 				}
 				s.l.Debug("client connected", "client_id", session.ClientID)
@@ -61,7 +61,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 }
 
-func ListenAndServe(ctx context.Context, conf *ServerConfig, store Storer,
+func ListenAndServe(ctx context.Context, conf ServerConfig, store Storer,
 	logger *slog.Logger) error {
 	srv := &Server{
 		conf:  conf,
@@ -100,8 +100,21 @@ func (s *Server) handleStream(session *dto.Session, stream quic.Stream) error {
 		return fmt.Errorf("read request: %w", err)
 	}
 
+	fmt.Println(req)
+
+	resp := &protocol.Response{}
+
 	if err := s.handleRequest(session, req); err != nil {
-		return fmt.Errorf("handle request: %w", err)
+		if err := protocol.WriteResponse(resp, stream); err != nil {
+			return fmt.Errorf("write unsuccessful response: %w", err)
+		}
+
+		return nil
+	}
+
+	resp.Success = true
+	if err := protocol.WriteResponse(resp, stream); err != nil {
+		return fmt.Errorf("write successful response: %w", err)
 	}
 
 	return nil
@@ -135,7 +148,7 @@ func (s *Server) handleConnect(conn quic.Connection) (*dto.Session, error) {
 	}
 
 	sess, err := s.store.GetOrCreateSession(connect.ClientID,
-		s.conf.KeepaliveInterval+s.conf.SessionRetentionPeriod)
+		s.conf.KeepaliveInterval+s.conf.SessionRetentionDuration)
 	if err != nil {
 		return nil, fmt.Errorf("get session: %w", err)
 	}

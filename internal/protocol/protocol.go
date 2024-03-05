@@ -13,7 +13,8 @@ const (
 	UnknownCommand Command = iota
 	ConnectCommand
 	KeepaliveCommand
-	LockCommand
+	TryAcquireLockCommand
+	ReleaseLockCommand
 )
 
 type Request struct {

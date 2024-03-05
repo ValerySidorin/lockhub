@@ -8,9 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"log"
-	"log/slog"
 	"math/big"
-	"os"
 	"time"
 
 	"github.com/ValerySidorin/lockhub"
@@ -20,30 +18,36 @@ const addr = "localhost:13796"
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
-	serverConf := &lockhub.ServerConfig{
-		Addr:                   addr,
-		TLS:                    generateTLSConfig(),
-		KeepaliveInterval:      12 * time.Second,
-		SessionRetentionPeriod: 5 * time.Minute,
-	}
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
-	store := lockhub.NewInmemStore(logger)
-	go func() { log.Fatal(lockhub.ListenAndServe(ctx, serverConf, store, logger)) }()
+	defer cancel()
+	// serverConf := &lockhub.ServerConfig{
+	// 	Addr:                   addr,
+	// 	TLS:                    generateTLSConfig(),
+	// 	KeepaliveInterval:      12 * time.Second,
+	// 	SessionRetentionPeriod: 5 * time.Minute,
+	// }
+	// logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	// 	Level: slog.LevelDebug,
+	// }))
+	// store := lockhub.NewInmemStore(logger)
+	// go func() { log.Fatal(lockhub.ListenAndServe(ctx, serverConf, store, logger)) }()
 
-	clientConf := &lockhub.ClientConfig{
+	clientConf := lockhub.ClientConfig{
 		Addr:     addr,
 		ClientID: "12345",
 		TLS:      &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"lockhub"}},
 	}
-	_, err := lockhub.NewClient(ctx, clientConf)
+	c, err := lockhub.NewClient(ctx, clientConf)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	time.Sleep(1 * time.Second)
+
+	if err := c.TryAcquireLockVersion("lock", 1783); err != nil {
+		log.Fatal(err)
+	}
+
 	time.Sleep(60 * time.Second)
-	cancel()
 }
 
 func generateTLSConfig() *tls.Config {

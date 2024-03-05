@@ -14,22 +14,31 @@ import (
 type Storer interface {
 	SetSessionTTL(clientID string, ttl time.Duration) error
 	GetOrCreateSession(clientID string, ttl time.Duration) (*dto.Session, error)
-	AcquireLock(clientID, name string) error
-	DeleteLock(clientID, name string) error
+	TryAcquireLock(sess *dto.Session, name string, version uint64) error
+	ReleaseLock(sess *dto.Session, name string) error
+}
+
+type StoreConfig struct {
+	DeleteStaleLockInterval  time.Duration
+	MinLockRetentionDuration time.Duration
 }
 
 type InmemStore struct {
+	conf StoreConfig
+
 	sessions *ttlcache.Cache[string, *dto.Session]
-	locks    map[string]*dto.Lock
+	locks    map[string]dto.Lock
 	smu      sync.RWMutex
 	lmu      sync.RWMutex
 
 	l *slog.Logger
 }
 
-func NewInmemStore(logger *slog.Logger) *InmemStore {
+func NewInmemStore(ctx context.Context, conf StoreConfig, logger *slog.Logger) *InmemStore {
 	s := &InmemStore{
-		l: logger,
+		conf:  conf,
+		locks: make(map[string]dto.Lock),
+		l:     logger,
 	}
 
 	sessions := ttlcache.New[string, *dto.Session]()
@@ -37,17 +46,37 @@ func NewInmemStore(logger *slog.Logger) *InmemStore {
 		s.lmu.Lock()
 		defer s.lmu.Unlock()
 
-		for _, lock := range i.Value().Locks {
-			delete(s.locks, lock)
+		sess := i.Value()
+
+		for _, lock := range sess.Locks {
+			s.locks[lock.Name] = dto.Lock{
+				Name:      lock.Name,
+				ClientID:  "",
+				Version:   lock.Version,
+				UpdatedAt: lock.UpdatedAt,
+			}
 		}
 
-		s.l.Debug("session expired", "client_id", i.Value().ClientID)
+		s.l.Debug("session terminated", "client_id", sess.ClientID)
 	})
 	go sessions.Start()
 
-	return &InmemStore{
-		sessions: sessions,
-	}
+	go func() {
+		t := time.NewTicker(conf.DeleteStaleLockInterval)
+		defer t.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.deleteStaleLocks()
+			}
+		}
+	}()
+
+	s.sessions = sessions
+	return s
 }
 
 func (s *InmemStore) SetSessionTTL(clientID string, ttl time.Duration) error {
@@ -76,37 +105,91 @@ func (s *InmemStore) GetOrCreateSession(clientID string, ttl time.Duration) (*dt
 	return session, nil
 }
 
-func (s *InmemStore) AcquireLock(clientID, name string) error {
+func (s *InmemStore) TryAcquireLock(sess *dto.Session, name string, version uint64) error {
 	s.lmu.Lock()
 	defer s.lmu.Unlock()
 
-	panic("not implemented")
-}
-
-func (s *InmemStore) DeleteLock(clientID, name string) error {
-	s.smu.Lock()
-	s.lmu.Lock()
-	defer s.lmu.Unlock()
-	defer s.smu.Unlock()
-
-	item := s.sessions.Get(clientID)
-	if item != nil {
-		session := item.Value()
-		lockIdx := -1
-		for i, lock := range session.Locks {
-			if lock == name {
-				lockIdx = i
-				break
+	lock, ok := s.locks[name]
+	if ok {
+		if lock.ClientID == "" {
+			if version < lock.Version {
+				return errors.New("requested lock version is lower then already held")
 			}
+
+			newLock := dto.Lock{
+				Name:      name,
+				ClientID:  sess.ClientID,
+				Version:   version,
+				UpdatedAt: time.Now().Unix(),
+			}
+			s.locks[name] = newLock
+
+			s.smu.Lock()
+			sess.Locks = append(sess.Locks, newLock)
+			s.smu.Unlock()
+			return nil
 		}
-		if lockIdx != -1 {
-			locks := session.Locks[0:lockIdx]
-			locks = append(locks, session.Locks[lockIdx+1:]...)
-			session.Locks = locks
-			s.sessions.Set(clientID, session, item.ExpiresAt().Sub(time.Now()))
+		if lock.ClientID == sess.ClientID {
+			return nil
 		}
-		delete(s.locks, name)
+		return errors.New("failed to acquire lock")
 	}
 
+	newLock := dto.Lock{
+		Name:      name,
+		ClientID:  sess.ClientID,
+		Version:   version,
+		UpdatedAt: time.Now().Unix(),
+	}
+	s.locks[name] = newLock
+
+	s.smu.Lock()
+	sess.Locks = append(sess.Locks, newLock)
+	s.smu.Unlock()
 	return nil
+}
+
+func (s *InmemStore) ReleaseLock(sess *dto.Session, name string) error {
+	lockIdx := -1
+	var lock dto.Lock
+	for i, l := range sess.Locks {
+		if l.Name == name {
+			lock = l
+			lockIdx = i
+			break
+		}
+	}
+	if lockIdx != -1 {
+		locks := sess.Locks[0:lockIdx]
+		locks = append(locks, sess.Locks[lockIdx+1:]...)
+		sess.Locks = locks
+	}
+
+	if lock.ClientID == "" {
+		return nil
+	}
+
+	lock.ClientID = ""
+	lock.UpdatedAt = time.Now().Unix()
+
+	s.lmu.Lock()
+	defer s.lmu.Unlock()
+
+	s.locks[name] = lock
+
+	return nil
+}
+
+func (s *InmemStore) deleteStaleLocks() {
+	s.lmu.Lock()
+	defer s.lmu.Unlock()
+
+	timestamp := time.Now()
+
+	for k, v := range s.locks {
+		if v.ClientID == "" &&
+			timestamp.Sub(time.Unix(v.UpdatedAt, 0)) > s.conf.MinLockRetentionDuration {
+			delete(s.locks, k)
+		}
+	}
 }

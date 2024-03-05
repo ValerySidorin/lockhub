@@ -18,16 +18,16 @@ type ServerConfig struct {
 	TLS  *tls.Config
 	QUIC *quic.Config
 
-	KeepaliveInterval      time.Duration
-	SessionRetentionPeriod time.Duration
+	KeepaliveInterval        time.Duration
+	SessionRetentionDuration time.Duration
 }
 
 func (c *ServerConfig) SetDefaults() {
 	if c.KeepaliveInterval == 0 {
 		c.KeepaliveInterval = DefaultKeepaliveInterval
 	}
-	if c.SessionRetentionPeriod == 0 {
-		c.SessionRetentionPeriod = DefaultSessionRetentionPeriod
+	if c.SessionRetentionDuration == 0 {
+		c.SessionRetentionDuration = DefaultSessionRetentionPeriod
 	}
 }
 

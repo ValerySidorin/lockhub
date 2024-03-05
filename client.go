@@ -12,10 +12,12 @@ import (
 )
 
 type Client struct {
-	conf *ClientConfig
+	conf    ClientConfig
+	conn    quic.Connection
+	isReady bool
 }
 
-func NewClient(ctx context.Context, conf *ClientConfig) (*Client, error) {
+func NewClient(ctx context.Context, conf ClientConfig) (*Client, error) {
 	if err := conf.Validate(); err != nil {
 		return nil, fmt.Errorf("validate client config: %w", err)
 	}
@@ -76,5 +78,37 @@ func NewClient(ctx context.Context, conf *ClientConfig) (*Client, error) {
 		}
 	}()
 
-	return &Client{conf: conf}, nil
+	return &Client{
+		conf: conf,
+		conn: conn,
+	}, nil
+}
+
+func (c *Client) TryAcquireLockVersion(name string, version uint64) error {
+	stream, err := c.conn.OpenStream()
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+
+	req := protocol.Request{
+		Cmd:     protocol.TryAcquireLockCommand,
+		Payload: protocol.TryAcquireLock{Name: name, Version: version}.Bytes(),
+	}
+
+	if err := protocol.WriteRequest(req, stream); err != nil {
+		return err
+	}
+	stream.Close()
+
+	resp, err := protocol.ReadResponse(stream)
+	if err != nil {
+		return err
+	}
+
+	if !resp.Success {
+		return errors.New("failed to acquire lock")
+	}
+
+	return nil
 }
