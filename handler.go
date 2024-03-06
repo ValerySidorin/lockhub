@@ -15,6 +15,8 @@ func (s *Server) handleRequest(session *dto.Session, req protocol.Request) error
 		return s.handleKeepaliveCommand(session)
 	case protocol.TryAcquireLockCommand:
 		return s.handleTryAcquireLockCommand(session, req.Payload)
+	case protocol.ReleaseLockCommand:
+		return s.handleReleaseLockCommand(session, req.Payload)
 	default:
 		return errors.New("unknown command")
 	}
@@ -43,5 +45,19 @@ func (s *Server) handleTryAcquireLockCommand(
 
 	s.l.Debug("lock acquired",
 		"client_id", session.ClientID, "name", req.Name, "version", req.Version)
+	return nil
+}
+
+func (s *Server) handleReleaseLockCommand(session *dto.Session, payload []byte) error {
+	req, err := protocol.NewReleaseLock(payload)
+	if err != nil {
+		return fmt.Errorf("parse release request: %w", err)
+	}
+
+	if err := s.store.ReleaseLock(session, req.Name); err != nil {
+		return fmt.Errorf("release lock: %w", err)
+	}
+
+	s.l.Debug("lock released", "client_id", session.ClientID, "name", req.Name)
 	return nil
 }

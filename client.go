@@ -11,6 +11,10 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
+type Byter interface {
+	Bytes() []byte
+}
+
 type Client struct {
 	conf    ClientConfig
 	conn    quic.Connection
@@ -85,25 +89,14 @@ func NewClient(ctx context.Context, conf ClientConfig) (*Client, error) {
 }
 
 func (c *Client) TryAcquireLockVersion(name string, version uint64) error {
-	stream, err := c.conn.OpenStream()
-	if err != nil {
-		return err
-	}
-	defer stream.Close()
-
 	req := protocol.Request{
 		Cmd:     protocol.TryAcquireLockCommand,
 		Payload: protocol.TryAcquireLock{Name: name, Version: version}.Bytes(),
 	}
 
-	if err := protocol.WriteRequest(req, stream); err != nil {
-		return err
-	}
-	stream.Close()
-
-	resp, err := protocol.ReadResponse(stream)
+	resp, err := c.sendRequest(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("send request: %w", err)
 	}
 
 	if !resp.Success {
@@ -111,4 +104,51 @@ func (c *Client) TryAcquireLockVersion(name string, version uint64) error {
 	}
 
 	return nil
+}
+
+func (c *Client) ReleaseLock(name string) error {
+	req := protocol.Request{
+		Cmd:     protocol.ReleaseLockCommand,
+		Payload: protocol.ReleaseLock{Name: name}.Bytes(),
+	}
+
+	resp, err := c.sendRequest(req)
+	if err != nil {
+		return fmt.Errorf("send request: %w", err)
+	}
+
+	if !resp.Success {
+		return errors.New("failed to release lock")
+	}
+
+	return nil
+}
+
+func (c *Client) sendRequest(req protocol.Request) (protocol.Response, error) {
+	stream, err := c.conn.OpenStream()
+	if err != nil {
+		return protocol.Response{}, fmt.Errorf("open stream: %w", err)
+	}
+	defer stream.Close()
+
+	resp, err := roundTrip(req, stream)
+	if err != nil {
+		return resp, fmt.Errorf("round trip: %w", err)
+	}
+
+	return resp, nil
+}
+
+func roundTrip(req protocol.Request, stream quic.Stream) (protocol.Response, error) {
+	if err := protocol.WriteRequest(req, stream); err != nil {
+		return protocol.Response{}, fmt.Errorf("write request: %w", err)
+	}
+	stream.Close()
+
+	resp, err := protocol.ReadResponse(stream)
+	if err != nil {
+		return resp, fmt.Errorf("read response: %w", err)
+	}
+
+	return resp, nil
 }

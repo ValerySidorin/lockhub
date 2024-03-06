@@ -33,7 +33,7 @@ func main() {
 
 	clientConf := lockhub.ClientConfig{
 		Addr:     addr,
-		ClientID: "12345",
+		ClientID: "123456",
 		TLS:      &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"lockhub"}},
 	}
 	c, err := lockhub.NewClient(ctx, clientConf)
@@ -41,9 +41,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	time.Sleep(1 * time.Second)
+	if err := c.TryAcquireLockVersion("test", 123); err != nil {
+		log.Fatal(err)
+	}
 
-	if err := c.TryAcquireLockVersion("lock", 1783); err != nil {
+	if err := c.ReleaseLock("test"); err != nil {
 		log.Fatal(err)
 	}
 

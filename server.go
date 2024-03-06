@@ -100,8 +100,6 @@ func (s *Server) handleStream(session *dto.Session, stream quic.Stream) error {
 		return fmt.Errorf("read request: %w", err)
 	}
 
-	fmt.Println(req)
-
 	resp := &protocol.Response{}
 
 	if err := s.handleRequest(session, req); err != nil {
