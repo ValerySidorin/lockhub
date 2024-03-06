@@ -1,4 +1,4 @@
-package lockhub
+package client
 
 import (
 	"crypto/tls"

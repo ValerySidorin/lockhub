@@ -11,7 +11,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ValerySidorin/lockhub"
+	"github.com/ValerySidorin/lockhub/client"
 )
 
 const addr = "localhost:13796"
@@ -31,12 +31,12 @@ func main() {
 	// store := lockhub.NewInmemStore(logger)
 	// go func() { log.Fatal(lockhub.ListenAndServe(ctx, serverConf, store, logger)) }()
 
-	clientConf := lockhub.ClientConfig{
+	clientConf := client.ClientConfig{
 		Addr:     addr,
 		ClientID: "123456",
 		TLS:      &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"lockhub"}},
 	}
-	c, err := lockhub.NewClient(ctx, clientConf)
+	c, err := client.NewClient(ctx, clientConf)
 	if err != nil {
 		log.Fatal(err)
 	}

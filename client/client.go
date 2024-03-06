@@ -1,4 +1,4 @@
-package lockhub
+package client
 
 import (
 	"context"
@@ -86,6 +86,10 @@ func NewClient(ctx context.Context, conf ClientConfig) (*Client, error) {
 		conf: conf,
 		conn: conn,
 	}, nil
+}
+
+func (c *Client) TryAcquireLock(name string) error {
+	return c.TryAcquireLockVersion(name, 0)
 }
 
 func (c *Client) TryAcquireLockVersion(name string, version uint64) error {
