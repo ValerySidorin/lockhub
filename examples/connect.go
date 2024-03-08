@@ -41,24 +41,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	clientConf.ClientID = "123"
-	c2, err := client.NewClient(ctx, clientConf)
-	if err != nil {
-		log.Fatal(err)
+	if err := c.TryAcquireLockVersion("test", 123); err != nil {
+		log.Println(err, " 1234567")
 	}
 
-	go func() {
-		if err := c.TryAcquireLockVersion("test", 123); err != nil {
-
-			log.Fatal(err, " 1234567")
-		}
-	}()
-
-	go func() {
-		if err := c2.TryAcquireLockVersion("test", 123); err != nil {
-			log.Fatal(err, " 123")
-		}
-	}()
+	time.Sleep(1 * time.Second)
 
 	// if err := c.ReleaseLock("test"); err != nil {
 	// 	log.Fatal(err)

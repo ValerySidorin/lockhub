@@ -1,47 +1,80 @@
 package store
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/ValerySidorin/lockhub/internal/dto"
 )
 
 type Storer interface {
+	// For cache loader
+	GetClientIDs() ([]string, error)
+	GetLockNames() ([]string, error)
+
 	GetSession(clientID string) (dto.Session, bool, error)
-	SetSession(sess dto.Session) error
+	SetSessionIfNotExists(clientID string) error
 	DeleteSession(clientID string) error
+
 	GetLock(name string) (dto.Lock, bool, error)
 	SetLock(lock dto.Lock) error
 	DeleteLock(name string) error
+
+	// For raft
 	Snapshot() Storer
 }
 
 type InmemStore struct {
-	sessions map[string]dto.Session
-	locks    map[string]dto.Lock
+	Sessions map[string]dto.Session `json:"sessions"`
+	Locks    map[string]dto.Lock    `json:"locks"`
 
-	sync.RWMutex
+	sync.RWMutex `json:"-"`
 }
 
 func NewInmemStore() *InmemStore {
 	return &InmemStore{
-		sessions: make(map[string]dto.Session),
-		locks:    make(map[string]dto.Lock),
+		Sessions: make(map[string]dto.Session),
+		Locks:    make(map[string]dto.Lock),
 	}
 }
 
+func (s *InmemStore) GetClientIDs() ([]string, error) {
+	res := make([]string, 0, len(s.Sessions))
+	for k := range s.Sessions {
+		res = append(res, k)
+	}
+
+	return res, nil
+}
+
+func (s *InmemStore) GetLockNames() ([]string, error) {
+	res := make([]string, 0, len(s.Locks))
+	for k := range s.Locks {
+		res = append(res, k)
+	}
+
+	return res, nil
+}
+
 func (s *InmemStore) GetSession(clientID string) (dto.Session, bool, error) {
-	sess, ok := s.sessions[clientID]
+	sess, ok := s.Sessions[clientID]
 	return sess, ok, nil
 }
 
-func (s *InmemStore) SetSession(sess dto.Session) error {
-	s.sessions[sess.ClientID] = sess
+func (s *InmemStore) SetSessionIfNotExists(clientID string) error {
+	_, ok := s.Sessions[clientID]
+	if ok {
+		return nil
+	}
+	s.Sessions[clientID] = dto.Session{
+		ClientID: clientID,
+		Locks:    make(map[string]dto.Lock),
+	}
 	return nil
 }
 
 func (s *InmemStore) DeleteSession(clientID string) error {
-	sess, ok := s.sessions[clientID]
+	sess, ok := s.Sessions[clientID]
 	if !ok {
 		return nil
 	}
@@ -49,15 +82,15 @@ func (s *InmemStore) DeleteSession(clientID string) error {
 	for _, lock := range sess.Locks {
 		copyLock := lock
 		copyLock.ClientID = ""
-		s.locks[lock.Name] = copyLock
+		s.Locks[lock.Name] = copyLock
 	}
-	delete(s.sessions, clientID)
+	delete(s.Sessions, clientID)
 
 	return nil
 }
 
 func (s *InmemStore) GetLock(name string) (dto.Lock, bool, error) {
-	lock, ok := s.locks[name]
+	lock, ok := s.Locks[name]
 	return lock, ok, nil
 }
 
@@ -65,32 +98,43 @@ func (s *InmemStore) SetLock(lock dto.Lock) error {
 	s.Lock()
 	defer s.Unlock()
 
-	exLock, ok := s.locks[lock.Name]
-	s.locks[lock.Name] = lock
+	exLock, ok := s.Locks[lock.Name]
+	s.Locks[lock.Name] = lock
 
 	if lock.ClientID == "" {
 		if ok {
-			sess, ok := s.sessions[exLock.ClientID]
+			sess, ok := s.Sessions[exLock.ClientID]
 			if ok {
 				delete(sess.Locks, exLock.Name)
 			}
 		}
+
+		return nil
 	}
+
+	sess, ok := s.Sessions[lock.ClientID]
+	if !ok {
+		return errors.New("session not found")
+	}
+
+	sess.Locks[lock.Name] = lock
+	s.Sessions[lock.ClientID] = sess
+
 	return nil
 }
 
 func (s *InmemStore) DeleteLock(name string) error {
-	lock, ok := s.locks[name]
+	lock, ok := s.Locks[name]
 	if !ok {
 		return nil
 	}
-	delete(s.locks, name)
+	delete(s.Locks, name)
 
 	if lock.ClientID == "" {
 		return nil
 	}
 
-	sess, ok := s.sessions[lock.ClientID]
+	sess, ok := s.Sessions[lock.ClientID]
 	if !ok {
 		return nil
 	}
@@ -104,17 +148,17 @@ func (s *InmemStore) Snapshot() Storer {
 	defer s.Unlock()
 
 	sessionsCopy := make(map[string]dto.Session)
-	for k, v := range s.sessions {
+	for k, v := range s.Sessions {
 		sessionsCopy[k] = v
 	}
 
 	locksCopy := make(map[string]dto.Lock)
-	for k, v := range s.locks {
+	for k, v := range s.Locks {
 		locksCopy[k] = v
 	}
 
 	return &InmemStore{
-		sessions: sessionsCopy,
-		locks:    locksCopy,
+		Sessions: sessionsCopy,
+		Locks:    locksCopy,
 	}
 }

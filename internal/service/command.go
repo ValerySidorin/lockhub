@@ -5,7 +5,7 @@ import "github.com/ValerySidorin/lockhub/internal/dto"
 type opCode byte
 
 const (
-	setSessionOpCode opCode = iota
+	setSessionIfNotExistsOpCode opCode = iota
 	deleteSessionOpCode
 
 	setLockOpCode

@@ -32,8 +32,8 @@ func main() {
 				NodeID: "node_1",
 			},
 			KeepaliveInterval:        12 * time.Second,
-			SessionRetentionDuration: 5 * time.Minute,
-			LockRetentionDuration:    15 * time.Minute,
+			SessionRetentionDuration: 10 * time.Second,
+			LockRetentionDuration:    10 * time.Second,
 		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{

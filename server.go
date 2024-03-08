@@ -109,6 +109,7 @@ func (s *Server) handleStream(clientID string, stream quic.Stream) error {
 	resp := &protocol.Response{}
 
 	if err := s.handleRequest(clientID, req); err != nil {
+		s.l.Error(err.Error(), "client_id", clientID)
 		if err := protocol.WriteResponse(resp, stream); err != nil {
 			return fmt.Errorf("write unsuccessful response: %w", err)
 		}

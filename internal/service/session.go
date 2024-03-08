@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ValerySidorin/lockhub/internal/dto"
 	"github.com/hashicorp/raft"
 )
 
@@ -47,7 +46,7 @@ func (s *ServiceImpl) CreateSessionIfNotExists(clientID string) error {
 	}
 
 	c := command{
-		OpCode:   setSessionOpCode,
+		OpCode:   setSessionIfNotExistsOpCode,
 		ClientID: clientID,
 	}
 
@@ -61,9 +60,9 @@ func (s *ServiceImpl) CreateSessionIfNotExists(clientID string) error {
 	return nil
 }
 
-func (f *fsm) applySetSession(sess dto.Session) error {
-	if err := f.store.SetSession(sess); err != nil {
-		return fmt.Errorf("fsm: apply set session: %w", err)
+func (f *fsm) applySetSessionIfNotExists(clientID string) error {
+	if err := f.store.SetSessionIfNotExists(clientID); err != nil {
+		return fmt.Errorf("fsm: apply set session if not exists: %w", err)
 	}
 
 	return nil

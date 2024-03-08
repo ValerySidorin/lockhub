@@ -3,6 +3,7 @@ package lockhub
 import (
 	"crypto/tls"
 	"errors"
+	"fmt"
 
 	"github.com/ValerySidorin/lockhub/internal/service"
 	"github.com/quic-go/quic-go"
@@ -18,6 +19,10 @@ type ServerConfig struct {
 func (c *ServerConfig) Validate() error {
 	if c.Addr == "" {
 		return errors.New("addr not specified")
+	}
+
+	if err := c.Service.Validate(); err != nil {
+		return fmt.Errorf("validate service config: %w", err)
 	}
 
 	return nil

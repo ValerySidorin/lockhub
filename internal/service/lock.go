@@ -10,7 +10,7 @@ import (
 
 func (s *ServiceImpl) TryAcquireLock(clientID, lockName string, lockVersion uint64) error {
 	if s.raft.State() != raft.Leader {
-		return fmt.Errorf("service: try acquire lock: %w", ErrNotLeader)
+		return ErrNotLeader
 	}
 
 	c := command{
