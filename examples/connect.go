@@ -33,7 +33,7 @@ func main() {
 
 	clientConf := client.ClientConfig{
 		Addr:     addr,
-		ClientID: "123456",
+		ClientID: "1234567",
 		TLS:      &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"lockhub"}},
 	}
 	c, err := client.NewClient(ctx, clientConf)
@@ -41,15 +41,30 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := c.TryAcquireLockVersion("test", 123); err != nil {
+	clientConf.ClientID = "123"
+	c2, err := client.NewClient(ctx, clientConf)
+	if err != nil {
 		log.Fatal(err)
 	}
 
-	if err := c.ReleaseLock("test"); err != nil {
-		log.Fatal(err)
-	}
+	go func() {
+		if err := c.TryAcquireLockVersion("test", 123); err != nil {
 
-	time.Sleep(60 * time.Second)
+			log.Fatal(err, " 1234567")
+		}
+	}()
+
+	go func() {
+		if err := c2.TryAcquireLockVersion("test", 123); err != nil {
+			log.Fatal(err, " 123")
+		}
+	}()
+
+	// if err := c.ReleaseLock("test"); err != nil {
+	// 	log.Fatal(err)
+	// }
+
+	time.Sleep(100 * time.Second)
 }
 
 func generateTLSConfig() *tls.Config {

@@ -38,7 +38,7 @@ func NewClient(ctx context.Context, conf ClientConfig) (*Client, error) {
 	defer stream.Close()
 
 	req := protocol.Request{
-		Cmd:     protocol.ConnectCommand,
+		Cmd:     protocol.ConnectOpCode,
 		Payload: protocol.Connect{ClientID: conf.ClientID}.Bytes(),
 	}
 	if err := protocol.WriteRequest(req, stream); err != nil {
@@ -65,7 +65,7 @@ func NewClient(ctx context.Context, conf ClientConfig) (*Client, error) {
 			defer str.Close()
 
 			req := protocol.Request{
-				Cmd:     protocol.KeepaliveCommand,
+				Cmd:     protocol.KeepaliveOpCode,
 				Payload: protocol.Connect{ClientID: conf.ClientID}.Bytes(),
 			}
 
@@ -94,7 +94,7 @@ func (c *Client) TryAcquireLock(name string) error {
 
 func (c *Client) TryAcquireLockVersion(name string, version uint64) error {
 	req := protocol.Request{
-		Cmd:     protocol.TryAcquireLockCommand,
+		Cmd:     protocol.TryAcquireLockOpCode,
 		Payload: protocol.TryAcquireLock{Name: name, Version: version}.Bytes(),
 	}
 
@@ -112,7 +112,7 @@ func (c *Client) TryAcquireLockVersion(name string, version uint64) error {
 
 func (c *Client) ReleaseLock(name string) error {
 	req := protocol.Request{
-		Cmd:     protocol.ReleaseLockCommand,
+		Cmd:     protocol.ReleaseLockOpCode,
 		Payload: protocol.ReleaseLock{Name: name}.Bytes(),
 	}
 

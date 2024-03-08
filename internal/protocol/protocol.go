@@ -7,18 +7,27 @@ import (
 	"io"
 )
 
-type Command byte
+type OpCode byte
 
 const (
-	UnknownCommand Command = iota
-	ConnectCommand
-	KeepaliveCommand
-	TryAcquireLockCommand
-	ReleaseLockCommand
+	UnknownOpCode OpCode = iota
+	ConnectOpCode
+	KeepaliveOpCode
+	TryAcquireLockOpCode
+	ReleaseLockOpCode
+)
+
+type RespCode byte
+
+const (
+	UnknownRespCode = iota
+	OKRespCode
+	NotMasterRespCode
+	UnhandledErrRespCode
 )
 
 type Request struct {
-	Cmd     Command
+	Cmd     OpCode
 	Payload []byte
 }
 
@@ -52,7 +61,7 @@ func ReadRequest(r io.Reader) (Request, error) {
 	}
 
 	// Read cmd
-	req.Cmd = Command(data[0])
+	req.Cmd = OpCode(data[0])
 	if len(data) == 1 {
 		return req, nil
 	}

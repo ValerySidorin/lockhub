@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/ValerySidorin/lockhub/internal/dto"
 	"github.com/ValerySidorin/lockhub/internal/protocol"
+	"github.com/ValerySidorin/lockhub/internal/service"
+	"github.com/ValerySidorin/lockhub/store"
 	"github.com/quic-go/quic-go"
 )
 
 type Server struct {
-	conf  ServerConfig
-	store Storer
-	l     *slog.Logger
-	ctx   context.Context
+	conf    ServerConfig
+	service service.Service
+	l       *slog.Logger
+	ctx     context.Context
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
@@ -46,14 +47,14 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			}
 
 			go func() {
-				session, err := s.handleConnect(conn)
+				clientID, err := s.handleConnect(conn)
 				if err != nil {
 					s.l.Error(fmt.Errorf("handle connect: %w", err).Error())
 					return
 				}
-				s.l.Debug("client connected", "client_id", session.ClientID)
+				s.l.Debug("client connected", "client_id", clientID)
 
-				if err := s.handleConn(session, conn); err != nil {
+				if err := s.handleConn(clientID, conn); err != nil {
 					s.l.Error(fmt.Errorf("handle conn: %w", err).Error())
 				}
 			}()
@@ -61,19 +62,24 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 }
 
-func ListenAndServe(ctx context.Context, conf ServerConfig, store Storer,
+func ListenAndServe(ctx context.Context, conf ServerConfig, store store.Storer,
 	logger *slog.Logger) error {
+	service := service.New(conf.Service, store, logger)
+	if err := service.Open(); err != nil {
+		return fmt.Errorf("open: %w", err)
+	}
+
 	srv := &Server{
-		conf:  conf,
-		store: store,
-		l:     logger,
-		ctx:   ctx,
+		conf:    conf,
+		service: service,
+		l:       logger,
+		ctx:     ctx,
 	}
 
 	return srv.ListenAndServe(ctx)
 }
 
-func (s *Server) handleConn(session *dto.Session, conn quic.Connection) error {
+func (s *Server) handleConn(clientID string, conn quic.Connection) error {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -85,7 +91,7 @@ func (s *Server) handleConn(session *dto.Session, conn quic.Connection) error {
 			}
 
 			go func() {
-				if err := s.handleStream(session, str); err != nil {
+				if err := s.handleStream(clientID, str); err != nil {
 					s.l.Error(fmt.Errorf("handle stream: %w", err).Error())
 				}
 			}()
@@ -93,7 +99,7 @@ func (s *Server) handleConn(session *dto.Session, conn quic.Connection) error {
 	}
 }
 
-func (s *Server) handleStream(session *dto.Session, stream quic.Stream) error {
+func (s *Server) handleStream(clientID string, stream quic.Stream) error {
 	defer stream.Close()
 	req, err := protocol.ReadRequest(stream)
 	if err != nil {
@@ -102,7 +108,7 @@ func (s *Server) handleStream(session *dto.Session, stream quic.Stream) error {
 
 	resp := &protocol.Response{}
 
-	if err := s.handleRequest(session, req); err != nil {
+	if err := s.handleRequest(clientID, req); err != nil {
 		if err := protocol.WriteResponse(resp, stream); err != nil {
 			return fmt.Errorf("write unsuccessful response: %w", err)
 		}
@@ -118,11 +124,11 @@ func (s *Server) handleStream(session *dto.Session, stream quic.Stream) error {
 	return nil
 }
 
-func (s *Server) handleConnect(conn quic.Connection) (*dto.Session, error) {
+func (s *Server) handleConnect(conn quic.Connection) (string, error) {
 	resp := &protocol.Response{}
 	stream, err := conn.AcceptStream(s.ctx)
 	if err != nil {
-		return nil, fmt.Errorf("accept stream: %w", err)
+		return "", fmt.Errorf("accept stream: %w", err)
 	}
 	defer func(resp *protocol.Response) {
 		if err := protocol.WriteResponse(resp, stream); err != nil {
@@ -133,24 +139,22 @@ func (s *Server) handleConnect(conn quic.Connection) (*dto.Session, error) {
 
 	req, err := protocol.ReadRequest(stream)
 	if err != nil {
-		return nil, fmt.Errorf("read req: %w", err)
+		return "", fmt.Errorf("read req: %w", err)
 	}
 
-	if req.Cmd != protocol.ConnectCommand {
-		return nil, errors.New("invalid connect command")
+	if req.Cmd != protocol.ConnectOpCode {
+		return "", errors.New("invalid connect command")
 	}
 
 	connect, err := protocol.NewConnect(req.Payload)
 	if err != nil {
-		return nil, fmt.Errorf("read connect: %w", err)
+		return "", fmt.Errorf("read connect: %w", err)
 	}
 
-	sess, err := s.store.GetOrCreateSession(connect.ClientID,
-		s.conf.KeepaliveInterval+s.conf.SessionRetentionDuration)
-	if err != nil {
-		return nil, fmt.Errorf("get session: %w", err)
+	if err := s.service.CreateSessionIfNotExists(connect.ClientID); err != nil {
+		return "", fmt.Errorf("get or create session: %w", err)
 	}
 
 	resp.Success = true
-	return sess, nil
+	return connect.ClientID, nil
 }

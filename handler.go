@@ -3,61 +3,57 @@ package lockhub
 import (
 	"errors"
 	"fmt"
-	"time"
 
-	"github.com/ValerySidorin/lockhub/internal/dto"
 	"github.com/ValerySidorin/lockhub/internal/protocol"
 )
 
-func (s *Server) handleRequest(session *dto.Session, req protocol.Request) error {
+func (s *Server) handleRequest(clientID string, req protocol.Request) error {
 	switch req.Cmd {
-	case protocol.KeepaliveCommand:
-		return s.handleKeepaliveCommand(session)
-	case protocol.TryAcquireLockCommand:
-		return s.handleTryAcquireLockCommand(session, req.Payload)
-	case protocol.ReleaseLockCommand:
-		return s.handleReleaseLockCommand(session, req.Payload)
+	case protocol.KeepaliveOpCode:
+		return s.handleKeepaliveCommand(clientID)
+	case protocol.TryAcquireLockOpCode:
+		return s.handleTryAcquireLockCommand(clientID, req.Payload)
+	case protocol.ReleaseLockOpCode:
+		return s.handleReleaseLockCommand(clientID, req.Payload)
 	default:
 		return errors.New("unknown command")
 	}
 }
 
-func (s *Server) handleKeepaliveCommand(session *dto.Session) error {
-	if err := s.store.SetSessionTTL(session.ClientID,
-		s.conf.KeepaliveInterval+s.conf.SessionRetentionDuration); err != nil {
-		return fmt.Errorf("set session: %w", err)
+func (s *Server) handleKeepaliveCommand(clientID string) error {
+	if err := s.service.ExtendSession(clientID); err != nil {
+		return fmt.Errorf("extend session: %w", err)
 	}
-	s.l.Debug("session extended", "client_id", session.ClientID)
-	time.Sleep(s.conf.KeepaliveInterval)
+	s.l.Debug("session extended", "client_id", clientID)
 	return nil
 }
 
 func (s *Server) handleTryAcquireLockCommand(
-	session *dto.Session, payload []byte) error {
+	clientID string, payload []byte) error {
 	req, err := protocol.NewTryAcquireLock(payload)
 	if err != nil {
 		return fmt.Errorf("parse try acquire lock request: %w", err)
 	}
 
-	if err := s.store.TryAcquireLock(session, req.Name, req.Version); err != nil {
+	if err := s.service.TryAcquireLock(clientID, req.Name, req.Version); err != nil {
 		return fmt.Errorf("try acquire lock: %w", err)
 	}
 
 	s.l.Debug("lock acquired",
-		"client_id", session.ClientID, "name", req.Name, "version", req.Version)
+		"client_id", clientID, "name", req.Name, "version", req.Version)
 	return nil
 }
 
-func (s *Server) handleReleaseLockCommand(session *dto.Session, payload []byte) error {
+func (s *Server) handleReleaseLockCommand(clientID string, payload []byte) error {
 	req, err := protocol.NewReleaseLock(payload)
 	if err != nil {
 		return fmt.Errorf("parse release request: %w", err)
 	}
 
-	if err := s.store.ReleaseLock(session, req.Name); err != nil {
+	if err := s.service.ReleaseLock(clientID, req.Name); err != nil {
 		return fmt.Errorf("release lock: %w", err)
 	}
 
-	s.l.Debug("lock released", "client_id", session.ClientID, "name", req.Name)
+	s.l.Debug("lock released", "client_id", clientID, "name", req.Name)
 	return nil
 }

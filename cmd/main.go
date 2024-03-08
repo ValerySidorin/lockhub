@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/ValerySidorin/lockhub"
+	"github.com/ValerySidorin/lockhub/internal/service"
+	"github.com/ValerySidorin/lockhub/store"
 )
 
 func main() {
@@ -21,20 +23,24 @@ func main() {
 	defer cancel()
 
 	serverConf := lockhub.ServerConfig{
-		Addr:                     ":13796",
-		TLS:                      generateTLSConfig(),
-		KeepaliveInterval:        12 * time.Second,
-		SessionRetentionDuration: 5 * time.Minute,
+		Addr: ":13796",
+		TLS:  generateTLSConfig(),
+		Service: service.ServiceConfig{
+			Raft: service.RaftConfig{
+				Dir:    "./raft",
+				Bind:   "127.0.0.1:9346",
+				NodeID: "node_1",
+			},
+			KeepaliveInterval:        12 * time.Second,
+			SessionRetentionDuration: 5 * time.Minute,
+			LockRetentionDuration:    15 * time.Minute,
+		},
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	}))
 
-	storeConf := lockhub.StoreConfig{
-		DeleteStaleLockInterval:  1 * time.Minute,
-		MinLockRetentionDuration: 5 * time.Hour,
-	}
-	store := lockhub.NewInmemStore(ctx, storeConf, logger)
+	store := store.NewInmemStore()
 	if err := lockhub.ListenAndServe(ctx, serverConf, store, logger); err != nil {
 		logger.Error(err.Error())
 	}

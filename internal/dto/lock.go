@@ -1,8 +1,8 @@
 package dto
 
 type Lock struct {
-	Name      string
-	ClientID  string
-	Version   uint64
-	UpdatedAt int64
+	Name      string `json:"name"`
+	ClientID  string `json:"client_id"`
+	Version   uint64 `json:"version"`
+	UpdatedAt int64  `json:"updated_at"`
 }

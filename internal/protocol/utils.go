@@ -5,19 +5,19 @@ import (
 	"errors"
 )
 
-func DecodeCmd(p []byte) (Command, []byte, error) {
+func DecodeCmd(p []byte) (OpCode, []byte, error) {
 	if len(p) < 1 {
-		return UnknownCommand, p, errors.New("invalid buf")
+		return UnknownOpCode, p, errors.New("invalid buf")
 	}
-	cmd := Command(p[0])
-	if cmd == UnknownCommand {
+	cmd := OpCode(p[0])
+	if cmd == UnknownOpCode {
 		return cmd, p, errors.New("unknown command")
 	}
 
 	return cmd, p[1:], nil
 }
 
-func EncodeCmd(c Command) []byte {
+func EncodeCmd(c OpCode) []byte {
 	res := make([]byte, 1)
 	res = append(res, []byte{byte(c)}...)
 	return res
