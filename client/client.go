@@ -11,14 +11,9 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
-type Byter interface {
-	Bytes() []byte
-}
-
 type Client struct {
-	conf    ClientConfig
-	conn    quic.Connection
-	isReady bool
+	conf ClientConfig
+	conn quic.Connection
 }
 
 func NewClient(ctx context.Context, conf ClientConfig) (*Client, error) {

@@ -5,24 +5,91 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/ValerySidorin/lockhub/internal/protocol"
 	"github.com/ValerySidorin/lockhub/internal/service"
 	"github.com/ValerySidorin/lockhub/store"
+	"github.com/hashicorp/raft"
 	"github.com/quic-go/quic-go"
 )
 
 type Server struct {
-	conf    ServerConfig
+	conf ServerConfig
+
+	store             store.Storer
+	raftLogStore      raft.LogStore
+	raftStableStore   raft.StableStore
+	raftSnapshotStore raft.SnapshotStore
+	l                 *slog.Logger
+
 	service service.Service
-	l       *slog.Logger
-	ctx     context.Context
+
+	ctx context.Context
+}
+
+func NewServer(conf ServerConfig, options ...func(*Server)) *Server {
+	inmemStore := raft.NewInmemStore()
+	inmemSnapshotStore := raft.NewInmemSnapshotStore()
+	s := &Server{
+		conf:              conf,
+		store:             store.NewInmemStore(),
+		raftLogStore:      inmemStore,
+		raftStableStore:   inmemStore,
+		raftSnapshotStore: inmemSnapshotStore,
+		l: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})),
+	}
+
+	for _, o := range options {
+		o(s)
+	}
+
+	return s
+}
+
+func WithLogger(l *slog.Logger) func(*Server) {
+	return func(s *Server) {
+		s.l = l
+	}
+}
+
+func WithStore(store store.Storer) func(*Server) {
+	return func(s *Server) {
+		s.store = store
+	}
+}
+
+func WithRaftLogStore(logStore raft.LogStore) func(*Server) {
+	return func(s *Server) {
+		s.raftLogStore = logStore
+	}
+}
+
+func WithRaftStableStore(stableStore raft.StableStore) func(*Server) {
+	return func(s *Server) {
+		s.raftStableStore = stableStore
+	}
+}
+
+func WithRaftSnapshotStore(snapshotStore raft.SnapshotStore) func(*Server) {
+	return func(s *Server) {
+		s.raftSnapshotStore = snapshotStore
+	}
 }
 
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	s.conf.SetDefaults()
 	if err := s.conf.Validate(); err != nil {
 		return fmt.Errorf("validate server config: %w", err)
+	}
+
+	service := service.New(s.conf.Service, s.store, s.l)
+	if err := service.Open(
+		s.conf.Raft.NodeID, s.conf.Raft.BindAddr, s.conf.Raft.JoinAddr, s.conf.Raft.Timeout,
+		s.raftLogStore, s.raftStableStore, s.raftSnapshotStore); err != nil {
+		return fmt.Errorf("open service: %w", err)
 	}
 
 	ln, err := quic.ListenAddr(s.conf.Addr, s.conf.TLS, s.conf.QUIC)
@@ -60,23 +127,6 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 			}()
 		}
 	}
-}
-
-func ListenAndServe(ctx context.Context, conf ServerConfig, store store.Storer,
-	logger *slog.Logger) error {
-	service := service.New(conf.Service, store, logger)
-	if err := service.Open(); err != nil {
-		return fmt.Errorf("open: %w", err)
-	}
-
-	srv := &Server{
-		conf:    conf,
-		service: service,
-		l:       logger,
-		ctx:     ctx,
-	}
-
-	return srv.ListenAndServe(ctx)
 }
 
 func (s *Server) handleConn(clientID string, conn quic.Connection) error {

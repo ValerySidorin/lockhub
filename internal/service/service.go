@@ -9,13 +9,11 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/ValerySidorin/lockhub/store"
 	"github.com/hashicorp/raft"
-	raftboltdb "github.com/hashicorp/raft-boltdb"
 	"github.com/jellydator/ttlcache/v3"
 )
 
@@ -31,8 +29,9 @@ type Service interface {
 }
 
 type ServiceImpl struct {
-	conf ServiceConfig
-	raft *raft.Raft
+	conf        ServiceConfig
+	raft        *raft.Raft
+	raftTimeout time.Duration
 
 	store store.Storer
 
@@ -55,44 +54,34 @@ func New(conf ServiceConfig, store store.Storer, l *slog.Logger) *ServiceImpl {
 	return s
 }
 
-func (s *ServiceImpl) Open() error {
+func (s *ServiceImpl) Open(
+	nodeID, bindAddr, joinAddr string, raftTimeout time.Duration,
+	raftLogStore raft.LogStore, raftStableStore raft.StableStore,
+	raftSnapshotStore raft.SnapshotStore,
+) error {
 	raftCfg := raft.DefaultConfig()
-	raftCfg.LocalID = raft.ServerID(s.conf.Raft.NodeID)
+	raftCfg.LocalID = raft.ServerID(nodeID)
+	s.raftTimeout = raftTimeout
 
-	addr, err := net.ResolveTCPAddr("tcp", s.conf.Raft.Bind)
+	addr, err := net.ResolveTCPAddr("tcp", bindAddr)
 	if err != nil {
 		return fmt.Errorf("resolve raft bind addr: %w", err)
 	}
 
-	transport, err := raft.NewTCPTransport(s.conf.Raft.Bind, addr, 3, 10*time.Second, os.Stderr)
+	transport, err := raft.NewTCPTransport(bindAddr, addr, 3, 10*time.Second, os.Stderr)
 	if err != nil {
 		return fmt.Errorf("init raft transport: %w", err)
 	}
 
-	snapshots, err := raft.NewFileSnapshotStore(s.conf.Raft.Dir, retainSnapshotCount, os.Stderr)
-	if err != nil {
-		return fmt.Errorf("init file snapshot store: %w", err)
-	}
-
-	var logStore raft.LogStore
-	var stableStore raft.StableStore
-	db, err := raftboltdb.New(raftboltdb.Options{
-		Path: filepath.Join(s.conf.Raft.Dir, "raft.db"),
-	})
-	if err != nil {
-		return fmt.Errorf("init raft store: %w", err)
-	}
-
-	logStore = db
-	stableStore = db
-
-	r, err := raft.NewRaft(raftCfg, (*fsm)(s), logStore, stableStore, snapshots, transport)
+	r, err := raft.NewRaft(raftCfg, (*fsm)(s),
+		raftLogStore, raftStableStore, raftSnapshotStore,
+		transport)
 	if err != nil {
 		return fmt.Errorf("init raft: %w", err)
 	}
 	s.raft = r
 
-	if s.conf.Raft.Join == "" {
+	if joinAddr == "" {
 		config := raft.Configuration{
 			Servers: []raft.Server{
 				{
@@ -146,7 +135,7 @@ func (s *ServiceImpl) Join(nodeID, addr string) error {
 func (s *ServiceImpl) handleRaftStateChange() {
 	for isLeader := range s.raft.LeaderCh() {
 		if isLeader {
-			f := s.raft.Barrier(raftTimeout)
+			f := s.raft.Barrier(s.raftTimeout)
 			if f.Error() != nil {
 				s.raft.LeadershipTransfer()
 				continue
@@ -162,8 +151,8 @@ func (s *ServiceImpl) handleRaftStateChange() {
 }
 
 func (s *ServiceImpl) bootstrapTTLCaches() error {
-	s.logger.Debug("bootstrapping caches", "id", s.conf.Raft.NodeID)
-	defer s.logger.Debug("caches bootstrapped", "id", s.conf.Raft.NodeID)
+	s.logger.Debug("bootstrapping caches")
+	defer s.logger.Debug("caches bootstrapped")
 
 	s.smu.Lock()
 	s.lmu.Lock()
@@ -220,7 +209,7 @@ func (s *ServiceImpl) bootstrapTTLCaches() error {
 			return
 		}
 
-		f := s.raft.Apply(b, raftTimeout)
+		f := s.raft.Apply(b, s.raftTimeout)
 		if f.Error() != nil {
 			s.logger.Error(
 				fmt.Errorf("on session eviction: raft apply: %w", err).Error())
@@ -244,7 +233,7 @@ func (s *ServiceImpl) bootstrapTTLCaches() error {
 			return
 		}
 
-		f := s.raft.Apply(b, raftTimeout)
+		f := s.raft.Apply(b, s.raftTimeout)
 		if f.Error() != nil {
 			s.logger.Error(
 				fmt.Errorf("on lock eviction: raft apply: %w", err).Error())
@@ -262,8 +251,8 @@ func (s *ServiceImpl) bootstrapTTLCaches() error {
 }
 
 func (s *ServiceImpl) dropCaches() {
-	s.logger.Debug("dropping caches", "id", s.conf.Raft.NodeID)
-	defer s.logger.Debug("caches dropped", "id", s.conf.Raft.NodeID)
+	s.logger.Debug("dropping caches", "id")
+	defer s.logger.Debug("caches dropped", "id")
 
 	s.sessionEvictor.Stop()
 	s.lockEvictor.Stop()
@@ -279,7 +268,7 @@ func (s *ServiceImpl) applyCommand(c command) error {
 		return fmt.Errorf("marshal {%d}: %w", c.OpCode, err)
 	}
 
-	f := s.raft.Apply(b, raftTimeout)
+	f := s.raft.Apply(b, s.raftTimeout)
 	if f.Error() != nil {
 		err = fmt.Errorf("apply {%d}: %w", c.OpCode, err)
 		s.logger.Error(err.Error())

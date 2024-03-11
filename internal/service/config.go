@@ -6,10 +6,6 @@ import (
 )
 
 const (
-	// Raft defaults
-	retainSnapshotCount = 2
-	raftTimeout         = 10 * time.Second
-
 	// Lockhub defaults
 	defaultKeepaliveInterval        = 12 * time.Second
 	defaultSessionRetentionDuration = 5 * time.Minute
@@ -17,17 +13,9 @@ const (
 )
 
 type ServiceConfig struct {
-	Raft                     RaftConfig `mapstructure:"raft"`
 	KeepaliveInterval        time.Duration
 	SessionRetentionDuration time.Duration
 	LockRetentionDuration    time.Duration
-}
-
-type RaftConfig struct {
-	Dir    string `mapstructure:"dir"`
-	Bind   string `mapstructure:"bind"`
-	Join   string `mapstructure:"join"`
-	NodeID string `mapstructure:"node_id"`
 }
 
 func (c *ServiceConfig) SetDefaults() {

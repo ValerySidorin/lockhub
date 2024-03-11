@@ -2,70 +2,58 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
+	"fmt"
 	"log/slog"
-	"math/big"
 	"os"
 	"os/signal"
-	"time"
+	"path/filepath"
 
 	"github.com/ValerySidorin/lockhub"
-	"github.com/ValerySidorin/lockhub/internal/service"
-	"github.com/ValerySidorin/lockhub/store"
+	"github.com/ValerySidorin/lockhub/config"
+	"github.com/hashicorp/raft"
+	"github.com/jessevdk/go-flags"
+	raftfastlog "github.com/tidwall/raft-fastlog"
 )
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancel()
 
-	serverConf := lockhub.ServerConfig{
-		Addr: ":13796",
-		TLS:  generateTLSConfig(),
-		Service: service.ServiceConfig{
-			Raft: service.RaftConfig{
-				Dir:    "./raft",
-				Bind:   "127.0.0.1:9346",
-				NodeID: "node_1",
-			},
-			KeepaliveInterval:        12 * time.Second,
-			SessionRetentionDuration: 10 * time.Second,
-			LockRetentionDuration:    10 * time.Second,
-		},
-	}
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	}))
 
-	store := store.NewInmemStore()
-	if err := lockhub.ListenAndServe(ctx, serverConf, store, logger); err != nil {
-		logger.Error(err.Error())
-	}
-}
+	var conf config.Config
 
-func generateTLSConfig() *tls.Config {
-	key, err := rsa.GenerateKey(rand.Reader, 1024)
-	if err != nil {
-		panic(err)
-	}
-	template := x509.Certificate{SerialNumber: big.NewInt(1)}
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
-	if err != nil {
-		panic(err)
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	flags.Parse(&conf)
 
-	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
+	serverConf, err := conf.Parse()
 	if err != nil {
-		panic(err)
+		logger.Error(fmt.Errorf("parse server conf: %w", err).Error())
+		os.Exit(1)
 	}
-	return &tls.Config{
-		InsecureSkipVerify: true,
-		Certificates:       []tls.Certificate{tlsCert},
-		NextProtos:         []string{"lockhub"},
+
+	snapshots, err := raft.NewFileSnapshotStore(
+		conf.Raft.Dir, conf.Raft.SnapshotsRetainCount, os.Stdout)
+	if err != nil {
+		logger.Error(fmt.Errorf("new raft snapshots store: %w", err).Error())
+		os.Exit(1)
+	}
+
+	raftDB, err := raftfastlog.NewFastLogStore(
+		filepath.Join(conf.Raft.Dir, "raft.db"), raftfastlog.High, os.Stdout)
+	if err != nil {
+		logger.Error(fmt.Errorf("new raft db: %w", err).Error())
+		os.Exit(1)
+	}
+
+	server := lockhub.NewServer(serverConf,
+		lockhub.WithRaftLogStore(raftDB),
+		lockhub.WithRaftStableStore(raftDB),
+		lockhub.WithRaftSnapshotStore(snapshots),
+		lockhub.WithLogger(logger))
+
+	if err := server.ListenAndServe(ctx); err != nil {
+		logger.Error(fmt.Errorf("listen and serve: %w", err).Error())
 	}
 }
