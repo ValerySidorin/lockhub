@@ -4,9 +4,11 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ValerySidorin/lockhub"
@@ -15,37 +17,81 @@ import (
 )
 
 type RaftConfig struct {
-	BindAddr             string        `short:"b" long:"bind" description:"Raft bind address" env:"BIND_ADDR"`
-	JoinAddr             string        `long:"join" description:"Raft join address" env:"JOIN_ADDR"`
-	NodeID               string        `short:"n" long:"node-id" description:"Raft node ID" env:"NODE_ID"`
-	Dir                  string        `short:"d" long:"dir" description:"Raft dir" env:"DIR"`
-	SnapshotsRetainCount int           `long:"snapshots-retain-count" description:"Raft snapshots retain count" env:"SNAPSHOTS_RETAIN_COUNT"`
-	Timeout              time.Duration `long:"timeout" description:"Raft timeout" env:"TIMEOUT"`
+	BindAddr             string
+	JoinAddr             string
+	NodeID               string
+	Dir                  string
+	SnapshotsRetainCount int
+	Timeout              time.Duration
 }
 
 type TLSConfig struct {
-	ClientCertsDir    string   `long:"client-certs-dir" description:"TLS client certs dir" env:"CLIENT_CERTS_DIR"`
-	ServerCertPEMPath string   `long:"server-cert-path" description:"TLS server cert path" env:"SERVER_CERT_PATH"`
-	ServerKeyPEMPath  string   `long:"server-key-path" description:"TLS server key path" env:"SERVER_KEY_PATH"`
-	MTLSEnabled       bool     `short:"m" long:"mtls-enabled" description:"MTLS enable flag" env:"MTLS_ENABLED"`
-	NextProtos        []string `long:"next-proto" description:"TLS next proto" env:"NEXT_PROTOS"`
+	ClientCertsDir    string
+	ServerCertPEMPath string
+	ServerKeyPEMPath  string
+	MTLSEnabled       bool
+	NextProtos        string
 }
 
 type QUICConfig struct {
-	MaxIncomingStreams   int64         `long:"max-incoming-streams" description:"QUIC max incoming streams" env:"MAX_INCOMING_STREAMS"`
-	KeepAlivePeriod      time.Duration `long:"keepalive-period" description:"QUIC keepalive period" env:"KEEPALIVE_PERIOD"`
-	HandshakeIdleTimeout time.Duration `long:"handshake-idle-timeout" description:"QUIC handshake idle timeout" env:"HANDSHAKE_IDLE_TIMEOUT"`
-	MaxIdleTimeout       time.Duration `long:"max-idle-timeout" description:"QUIC max idle timeout" env:"MAX_IDLE_TIMEOUT"`
+	MaxIncomingStreams   int64
+	KeepAlivePeriod      time.Duration
+	HandshakeIdleTimeout time.Duration
+	MaxIdleTimeout       time.Duration
+}
+
+type LogConfig struct {
+	Level string
 }
 
 type Config struct {
-	Addr                     string        `short:"a" long:"addr" description:"Lockhub QUIC server address" env:"ADDR"`
-	Raft                     RaftConfig    `group:"raft" namespace:"raft" env-namespace:"RAFT"`
-	TLS                      TLSConfig     `group:"tls" namespace:"tls" env-namespace:"TLS"`
-	QUIC                     QUICConfig    `group:"quic" namespace:"quic" env-namespace:"QUIC"`
-	SessionKeepaliveInterval time.Duration `long:"session-keepalive-interval" description:"Session keepalive interval. Defaults to 12s"`
-	SessionRetentionInterval time.Duration `long:"session-retention-duration" description:"Session retention duration. Defaults to 5m"`
-	LockRetentionDuration    time.Duration `long:"lock-retention-duration" description:"Lock retention duration. Defaults to 15m"`
+	Addr                     string
+	SessionKeepAliveInterval time.Duration
+	SessionRetentionDuration time.Duration
+	LockRetentionDuration    time.Duration
+	Raft                     RaftConfig
+	TLS                      TLSConfig
+	QUIC                     QUICConfig
+	Log                      LogConfig
+}
+
+func (c *Config) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&c.Addr, "addr", "", `Lockhub QUIC server address`)
+	f.DurationVar(&c.SessionKeepAliveInterval, "session-keepalive-interval", 0, "Lockhub session keepalive interval")
+	f.DurationVar(&c.SessionRetentionDuration, "session-retention-duration", 0, "Lockhub session retention duration")
+	f.DurationVar(&c.LockRetentionDuration, "lock-retention-duration", 0, "Lockhub lock retention duration")
+	c.Raft.RegisterFlags("raft", f)
+	c.TLS.RegisterFlags("tls", f)
+	c.QUIC.RegisterFlags("quic", f)
+	c.Log.RegisterFlags("log", f)
+}
+
+func (c *RaftConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
+	f.StringVar(&c.BindAddr, prefixName(prefix, "bind-addr"), "", `Raft bind address`)
+	f.StringVar(&c.JoinAddr, prefixName(prefix, "join-addr"), "", `Raft join address`)
+	f.StringVar(&c.NodeID, prefixName(prefix, "node-id"), "", `Raft node ID`)
+	f.StringVar(&c.Dir, prefixName(prefix, "dir"), "", `Raft dir`)
+	f.IntVar(&c.SnapshotsRetainCount, prefixName(prefix, "snapshots-retain-count"), 2, `Raft snapshots retain count`)
+	f.DurationVar(&c.Timeout, prefixName(prefix, "timeout"), 0, `Raft timeout`)
+}
+
+func (c *TLSConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
+	f.StringVar(&c.ClientCertsDir, prefixName(prefix, "client-certs-dir"), "", `TLS client certs dir`)
+	f.StringVar(&c.ServerCertPEMPath, prefixName(prefix, "server-cert-path"), "", `TLS server cert path`)
+	f.StringVar(&c.ServerKeyPEMPath, prefixName(prefix, "server-key-path"), "", `TLS server key path`)
+	f.BoolVar(&c.MTLSEnabled, prefixName(prefix, "mtls-enabled"), false, `TLS mTLS enabled flag`)
+	f.StringVar(&c.NextProtos, prefixName(prefix, "next-protos"), "", `TLS next protos, comma-separated`)
+}
+
+func (c *QUICConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
+	f.Int64Var(&c.MaxIncomingStreams, prefixName(prefix, "max-incoming-streams"), 0, `QUIC max incoming streams`)
+	f.DurationVar(&c.KeepAlivePeriod, prefixName(prefix, "keepalive-period"), 0, `QUIC keepalive period`)
+	f.DurationVar(&c.HandshakeIdleTimeout, prefixName(prefix, "handshake-idle-timeout"), 0, `QUIC handshake idle timeout`)
+	f.DurationVar(&c.MaxIdleTimeout, prefixName(prefix, "max-idle-timeout"), 0, `QUIC max idle timeout`)
+}
+
+func (c *LogConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
+	f.StringVar(&c.Level, prefixName(prefix, "level"), "info", `Log level`)
 }
 
 func (c *Config) Parse() (lockhub.ServerConfig, error) {
@@ -65,8 +111,8 @@ func (c *Config) Parse() (lockhub.ServerConfig, error) {
 		TLS:  tlsConf,
 		QUIC: c.QUIC.Parse(),
 		Service: service.ServiceConfig{
-			KeepaliveInterval:        c.SessionKeepaliveInterval,
-			SessionRetentionDuration: c.SessionRetentionInterval,
+			SessionKeepAliveInterval: c.SessionKeepAliveInterval,
+			SessionRetentionDuration: c.SessionRetentionDuration,
 			LockRetentionDuration:    c.LockRetentionDuration,
 		},
 	}, nil
@@ -111,20 +157,22 @@ func (c *TLSConfig) Parse() (*tls.Config, error) {
 		return nil, fmt.Errorf("validate: %w", err)
 	}
 
-	clientCAs, err := os.ReadDir(c.ClientCertsDir)
-	if err != nil {
-		return nil, fmt.Errorf("read client CAs dir: %w", err)
-	}
-
 	caCertPool := x509.NewCertPool()
 
-	for _, certEntry := range clientCAs {
-		if !certEntry.IsDir() {
-			cert, err := os.ReadFile(filepath.Join(c.ClientCertsDir, certEntry.Name()))
-			if err != nil {
-				return nil, fmt.Errorf("read client CA: %w", err)
+	if c.ClientCertsDir != "" {
+		clientCAs, err := os.ReadDir(c.ClientCertsDir)
+		if err != nil {
+			return nil, fmt.Errorf("read client CAs dir: %w", err)
+		}
+
+		for _, certEntry := range clientCAs {
+			if !certEntry.IsDir() {
+				cert, err := os.ReadFile(filepath.Join(c.ClientCertsDir, certEntry.Name()))
+				if err != nil {
+					return nil, fmt.Errorf("read client CA: %w", err)
+				}
+				caCertPool.AppendCertsFromPEM(cert)
 			}
-			caCertPool.AppendCertsFromPEM(cert)
 		}
 	}
 
@@ -138,11 +186,13 @@ func (c *TLSConfig) Parse() (*tls.Config, error) {
 		clientAuth = tls.RequireAndVerifyClientCert
 	}
 
+	nextProtos := strings.Split(c.NextProtos, ",")
+
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		ClientCAs:    caCertPool,
 		ClientAuth:   clientAuth,
-		NextProtos:   c.NextProtos,
+		NextProtos:   nextProtos,
 	}, nil
 }
 
@@ -160,4 +210,8 @@ func (c *TLSConfig) Validate() error {
 	}
 
 	return nil
+}
+
+func prefixName(prefix, name string) string {
+	return prefix + "." + name
 }

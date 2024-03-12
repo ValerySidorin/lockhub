@@ -13,9 +13,9 @@ func (s *ServiceImpl) ExtendSession(clientID string) error {
 	}
 
 	s.sessionEvictor.Set(clientID, struct{}{},
-		s.conf.KeepaliveInterval+s.conf.SessionRetentionDuration)
+		s.conf.SessionKeepAliveInterval+s.conf.SessionRetentionDuration)
 
-	time.Sleep(s.conf.KeepaliveInterval)
+	time.Sleep(s.conf.SessionKeepAliveInterval)
 
 	return nil
 }
@@ -35,11 +35,11 @@ func (s *ServiceImpl) CreateSessionIfNotExists(clientID string) error {
 
 	if ok {
 		s.sessionEvictor.Set(clientID, struct{}{},
-			s.conf.KeepaliveInterval+s.conf.SessionRetentionDuration)
+			s.conf.SessionKeepAliveInterval+s.conf.SessionRetentionDuration)
 		if s.conf.LockRetentionDuration > 0 {
 			for k := range existingSess.Locks {
 				s.lockEvictor.Set(k, struct{}{},
-					s.conf.KeepaliveInterval+s.conf.LockRetentionDuration)
+					s.conf.SessionKeepAliveInterval+s.conf.LockRetentionDuration)
 			}
 		}
 		return nil
@@ -55,7 +55,7 @@ func (s *ServiceImpl) CreateSessionIfNotExists(clientID string) error {
 	}
 
 	s.sessionEvictor.Set(clientID, struct{}{},
-		s.conf.KeepaliveInterval+s.conf.SessionRetentionDuration)
+		s.conf.SessionKeepAliveInterval+s.conf.SessionRetentionDuration)
 
 	return nil
 }

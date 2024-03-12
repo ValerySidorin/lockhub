@@ -164,7 +164,7 @@ func (s *ServiceImpl) bootstrapTTLCaches() error {
 
 	if err := loadCache(
 		sessEv,
-		s.conf.KeepaliveInterval+s.conf.SessionRetentionDuration,
+		s.conf.SessionKeepAliveInterval+s.conf.SessionRetentionDuration,
 		s.store.GetClientIDs,
 	); err != nil {
 		return fmt.Errorf("load sessions cache: %w", err)
@@ -251,8 +251,8 @@ func (s *ServiceImpl) bootstrapTTLCaches() error {
 }
 
 func (s *ServiceImpl) dropCaches() {
-	s.logger.Debug("dropping caches", "id")
-	defer s.logger.Debug("caches dropped", "id")
+	s.logger.Debug("dropping caches")
+	defer s.logger.Debug("caches dropped")
 
 	s.sessionEvictor.Stop()
 	s.lockEvictor.Stop()

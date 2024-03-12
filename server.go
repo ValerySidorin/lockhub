@@ -30,15 +30,14 @@ type Server struct {
 
 func NewServer(conf ServerConfig, options ...func(*Server)) *Server {
 	inmemStore := raft.NewInmemStore()
-	inmemSnapshotStore := raft.NewInmemSnapshotStore()
 	s := &Server{
 		conf:              conf,
 		store:             store.NewInmemStore(),
 		raftLogStore:      inmemStore,
 		raftStableStore:   inmemStore,
-		raftSnapshotStore: inmemSnapshotStore,
+		raftSnapshotStore: raft.NewInmemSnapshotStore(),
 		l: slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelInfo,
+			Level: slog.LevelDebug,
 		})),
 	}
 

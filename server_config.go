@@ -10,6 +10,8 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
+const defaultAddr = ":9613"
+
 type RaftConfig struct {
 	BindAddr string
 	JoinAddr string
@@ -30,6 +32,10 @@ func (c *ServerConfig) Validate() error {
 		return errors.New("addr not specified")
 	}
 
+	if err := c.Raft.Validate(); err != nil {
+		return fmt.Errorf("validate raft config: %w", err)
+	}
+
 	if err := c.Service.Validate(); err != nil {
 		return fmt.Errorf("validate service config: %w", err)
 	}
@@ -38,6 +44,9 @@ func (c *ServerConfig) Validate() error {
 }
 
 func (c *ServerConfig) SetDefaults() {
+	if c.Addr == "" {
+		c.Addr = defaultAddr
+	}
 	c.Service.SetDefaults()
 	c.Raft.SetDefaults()
 }

@@ -13,14 +13,14 @@ const (
 )
 
 type ServiceConfig struct {
-	KeepaliveInterval        time.Duration
+	SessionKeepAliveInterval time.Duration
 	SessionRetentionDuration time.Duration
 	LockRetentionDuration    time.Duration
 }
 
 func (c *ServiceConfig) SetDefaults() {
-	if c.KeepaliveInterval == 0 {
-		c.KeepaliveInterval = defaultKeepaliveInterval
+	if c.SessionKeepAliveInterval == 0 {
+		c.SessionKeepAliveInterval = defaultKeepaliveInterval
 	}
 	if c.SessionRetentionDuration == 0 {
 		c.SessionRetentionDuration = defaultSessionRetentionDuration
@@ -31,7 +31,7 @@ func (c *ServiceConfig) SetDefaults() {
 }
 
 func (c *ServiceConfig) Validate() error {
-	if c.KeepaliveInterval+c.SessionRetentionDuration > c.LockRetentionDuration {
+	if c.SessionKeepAliveInterval+c.SessionRetentionDuration > c.LockRetentionDuration {
 		return errors.New("lock retention duration can not be less than or equal to sum of session keepalive interval and session retention duration")
 	}
 

@@ -22,3 +22,12 @@ go.work
 
 # Raft test dir
 raft/
+
+# Certs test dir
+certs/
+
+# VSCode config
+.vscode/
+
+# MacOS hidden dir
+.DS_Store
