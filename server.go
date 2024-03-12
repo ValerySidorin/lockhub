@@ -90,6 +90,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		s.raftLogStore, s.raftStableStore, s.raftSnapshotStore); err != nil {
 		return fmt.Errorf("open service: %w", err)
 	}
+	s.service = service
+	s.ctx = ctx
 
 	ln, err := quic.ListenAddr(s.conf.Addr, s.conf.TLS, s.conf.QUIC)
 	if err != nil {
@@ -201,6 +203,7 @@ func (s *Server) handleConnect(conn quic.Connection) (string, error) {
 		return "", fmt.Errorf("read connect: %w", err)
 	}
 
+	fmt.Println(s.service == nil)
 	if err := s.service.CreateSessionIfNotExists(connect.ClientID); err != nil {
 		return "", fmt.Errorf("get or create session: %w", err)
 	}
