@@ -1,4 +1,4 @@
-package service
+package raft
 
 import "github.com/ValerySidorin/lockhub/internal/dto"
 

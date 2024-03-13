@@ -21,7 +21,7 @@ func (s *Server) handleRequest(clientID string, req protocol.Request) error {
 }
 
 func (s *Server) handleKeepaliveCommand(clientID string) error {
-	if err := s.service.ExtendSession(clientID); err != nil {
+	if err := s.raftService.ExtendSession(clientID); err != nil {
 		return fmt.Errorf("extend session: %w", err)
 	}
 	s.l.Debug("session extended", "client_id", clientID)
@@ -35,7 +35,7 @@ func (s *Server) handleTryAcquireLockCommand(
 		return fmt.Errorf("parse try acquire lock request: %w", err)
 	}
 
-	if err := s.service.TryAcquireLock(clientID, req.Name, req.Version); err != nil {
+	if err := s.raftService.TryAcquireLock(clientID, req.Name, req.Version); err != nil {
 		return fmt.Errorf("try acquire lock: %w", err)
 	}
 
@@ -50,7 +50,7 @@ func (s *Server) handleReleaseLockCommand(clientID string, payload []byte) error
 		return fmt.Errorf("parse release request: %w", err)
 	}
 
-	if err := s.service.ReleaseLock(clientID, req.Name); err != nil {
+	if err := s.raftService.ReleaseLock(clientID, req.Name); err != nil {
 		return fmt.Errorf("release lock: %w", err)
 	}
 

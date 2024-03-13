@@ -9,8 +9,8 @@ import (
 
 type Storer interface {
 	// For cache loader
-	GetClientIDs() ([]string, error)
-	GetLockNames() ([]string, error)
+	GetSessions() ([]dto.Session, error)
+	GetLocks() ([]dto.Lock, error)
 
 	GetSession(clientID string) (dto.Session, bool, error)
 	SetSessionIfNotExists(clientID string) error
@@ -38,19 +38,19 @@ func NewInmemStore() *InmemStore {
 	}
 }
 
-func (s *InmemStore) GetClientIDs() ([]string, error) {
-	res := make([]string, 0, len(s.Sessions))
-	for k := range s.Sessions {
-		res = append(res, k)
+func (s *InmemStore) GetSessions() ([]dto.Session, error) {
+	res := make([]dto.Session, 0, len(s.Sessions))
+	for _, v := range s.Sessions {
+		res = append(res, v)
 	}
 
 	return res, nil
 }
 
-func (s *InmemStore) GetLockNames() ([]string, error) {
-	res := make([]string, 0, len(s.Locks))
-	for k := range s.Locks {
-		res = append(res, k)
+func (s *InmemStore) GetLocks() ([]dto.Lock, error) {
+	res := make([]dto.Lock, 0, len(s.Locks))
+	for _, v := range s.Locks {
+		res = append(res, v)
 	}
 
 	return res, nil

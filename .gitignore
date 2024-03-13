@@ -21,7 +21,7 @@
 go.work
 
 # Raft test dir
-raft/
+rafttest/
 
 # Certs test dir
 certs/

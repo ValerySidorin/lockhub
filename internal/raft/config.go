@@ -1,4 +1,4 @@
-package service
+package raft
 
 import (
 	"errors"
@@ -12,13 +12,13 @@ const (
 	defaultLockRetentionDuration    = 15 * time.Minute
 )
 
-type ServiceConfig struct {
+type RaftServiceConfig struct {
 	SessionKeepAliveInterval time.Duration
 	SessionRetentionDuration time.Duration
 	LockRetentionDuration    time.Duration
 }
 
-func (c *ServiceConfig) SetDefaults() {
+func (c *RaftServiceConfig) SetDefaults() {
 	if c.SessionKeepAliveInterval == 0 {
 		c.SessionKeepAliveInterval = defaultKeepaliveInterval
 	}
@@ -30,7 +30,7 @@ func (c *ServiceConfig) SetDefaults() {
 	}
 }
 
-func (c *ServiceConfig) Validate() error {
+func (c *RaftServiceConfig) Validate() error {
 	if c.SessionKeepAliveInterval+c.SessionRetentionDuration > c.LockRetentionDuration {
 		return errors.New("lock retention duration can not be less than or equal to sum of session keepalive interval and session retention duration")
 	}

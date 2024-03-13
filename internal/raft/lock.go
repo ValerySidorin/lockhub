@@ -1,4 +1,4 @@
-package service
+package raft
 
 import (
 	"errors"
@@ -8,7 +8,9 @@ import (
 	"github.com/hashicorp/raft"
 )
 
-func (s *ServiceImpl) TryAcquireLock(clientID, lockName string, lockVersion uint64) error {
+func (s *RaftServiceImpl) TryAcquireLock(
+	clientID, lockName string, lockVersion uint64,
+) error {
 	if s.raft.State() != raft.Leader {
 		return ErrNotLeader
 	}
@@ -53,7 +55,7 @@ func (s *ServiceImpl) TryAcquireLock(clientID, lockName string, lockVersion uint
 	return nil
 }
 
-func (s *ServiceImpl) ReleaseLock(clientID, lockName string) error {
+func (s *RaftServiceImpl) ReleaseLock(clientID, lockName string) error {
 	s.lmu.Lock()
 	defer s.lmu.Unlock()
 

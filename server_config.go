@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ValerySidorin/lockhub/internal/service"
+	"github.com/ValerySidorin/lockhub/internal/raft"
 	"github.com/quic-go/quic-go"
 )
 
@@ -20,11 +20,11 @@ type RaftConfig struct {
 }
 
 type ServerConfig struct {
-	Addr    string
-	TLS     *tls.Config
-	QUIC    *quic.Config
-	Raft    RaftConfig
-	Service service.ServiceConfig
+	Addr        string
+	TLS         *tls.Config
+	QUIC        *quic.Config
+	Raft        RaftConfig
+	RaftService raft.RaftServiceConfig
 }
 
 func (c *ServerConfig) Validate() error {
@@ -36,7 +36,7 @@ func (c *ServerConfig) Validate() error {
 		return fmt.Errorf("validate raft config: %w", err)
 	}
 
-	if err := c.Service.Validate(); err != nil {
+	if err := c.RaftService.Validate(); err != nil {
 		return fmt.Errorf("validate service config: %w", err)
 	}
 
@@ -47,7 +47,7 @@ func (c *ServerConfig) SetDefaults() {
 	if c.Addr == "" {
 		c.Addr = defaultAddr
 	}
-	c.Service.SetDefaults()
+	c.RaftService.SetDefaults()
 	c.Raft.SetDefaults()
 }
 

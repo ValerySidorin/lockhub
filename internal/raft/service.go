@@ -1,7 +1,6 @@
-package service
+package raft
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,22 +13,21 @@ import (
 
 	"github.com/ValerySidorin/lockhub/store"
 	"github.com/hashicorp/raft"
-	"github.com/jellydator/ttlcache/v3"
 )
 
 var (
 	ErrNotLeader = errors.New("not leader")
 )
 
-type Service interface {
+type RaftService interface {
 	ExtendSession(clientID string) error
 	CreateSessionIfNotExists(clientID string) error
 	TryAcquireLock(clientID, lockName string, lockVersion uint64) error
 	ReleaseLock(clientID, lockName string) error
 }
 
-type ServiceImpl struct {
-	conf        ServiceConfig
+type RaftServiceImpl struct {
+	conf        RaftServiceConfig
 	raft        *raft.Raft
 	raftTimeout time.Duration
 
@@ -38,23 +36,28 @@ type ServiceImpl struct {
 	smu sync.RWMutex
 	lmu sync.Mutex
 
-	sessionEvictor *ttlcache.Cache[string, struct{}]
-	lockEvictor    *ttlcache.Cache[string, struct{}]
+	masterCache *masterCache
+	applicator  *applicator
 
 	logger *slog.Logger
 }
 
-func New(conf ServiceConfig, store store.Storer, l *slog.Logger) *ServiceImpl {
-	s := &ServiceImpl{
+func NewRaftService(
+	conf RaftServiceConfig, store store.Storer, l *slog.Logger,
+) *RaftServiceImpl {
+	s := &RaftServiceImpl{
 		conf:   conf,
 		store:  store,
 		logger: l,
+		masterCache: newMasterCache(
+			store, conf.SessionKeepAliveInterval,
+			conf.SessionRetentionDuration, conf.LockRetentionDuration, l),
 	}
 
 	return s
 }
 
-func (s *ServiceImpl) Open(
+func (s *RaftServiceImpl) Open(
 	nodeID, bindAddr, joinAddr string, raftTimeout time.Duration,
 	raftLogStore raft.LogStore, raftStableStore raft.StableStore,
 	raftSnapshotStore raft.SnapshotStore,
@@ -80,6 +83,7 @@ func (s *ServiceImpl) Open(
 		return fmt.Errorf("init raft: %w", err)
 	}
 	s.raft = r
+	s.applicator = newApplicator(r, s.raftTimeout)
 
 	if joinAddr == "" {
 		config := raft.Configuration{
@@ -98,7 +102,7 @@ func (s *ServiceImpl) Open(
 	return nil
 }
 
-func (s *ServiceImpl) Join(nodeID, addr string) error {
+func (s *RaftServiceImpl) Join(nodeID, addr string) error {
 	logger := s.logger.With("node_id", nodeID, "addr", addr)
 	logger.Debug("received join request")
 
@@ -132,7 +136,7 @@ func (s *ServiceImpl) Join(nodeID, addr string) error {
 	return nil
 }
 
-func (s *ServiceImpl) handleRaftStateChange() {
+func (s *RaftServiceImpl) handleRaftStateChange() {
 	for isLeader := range s.raft.LeaderCh() {
 		if isLeader {
 			f := s.raft.Barrier(s.raftTimeout)
@@ -140,129 +144,17 @@ func (s *ServiceImpl) handleRaftStateChange() {
 				s.raft.LeadershipTransfer()
 				continue
 			}
-			if err := s.bootstrapTTLCaches(); err != nil {
+			if err := s.masterCache.load(); err != nil {
 				s.raft.LeadershipTransfer()
 				continue
 			}
 			continue
 		}
-		s.dropCaches()
+		s.masterCache.drop()
 	}
 }
 
-func (s *ServiceImpl) bootstrapTTLCaches() error {
-	s.logger.Debug("bootstrapping caches")
-	defer s.logger.Debug("caches bootstrapped")
-
-	s.smu.Lock()
-	s.lmu.Lock()
-	defer s.lmu.Unlock()
-	defer s.smu.Unlock()
-
-	sessEv := ttlcache.New[string, struct{}]()
-	lockEv := ttlcache.New[string, struct{}]()
-
-	if err := loadCache(
-		sessEv,
-		s.conf.SessionKeepAliveInterval+s.conf.SessionRetentionDuration,
-		s.store.GetClientIDs,
-	); err != nil {
-		return fmt.Errorf("load sessions cache: %w", err)
-	}
-
-	if err := loadCache(
-		lockEv,
-		s.conf.LockRetentionDuration,
-		s.store.GetLockNames,
-	); err != nil {
-		return fmt.Errorf("load locks cache: %w", err)
-	}
-
-	sessEv.OnEviction(func(
-		ctx context.Context, er ttlcache.EvictionReason, i *ttlcache.Item[string, struct{}]) {
-		s.logger.Debug("session expired", "client_id", i.Key())
-		if s.conf.LockRetentionDuration > 0 {
-			sess, ok, err := s.store.GetSession(i.Key())
-			if err != nil {
-				s.logger.Error(
-					fmt.Errorf("on session eviction: get session: %w", err).Error(),
-				)
-				return
-			}
-
-			if ok {
-				for _, lock := range sess.Locks {
-					lockEv.Set(lock.Name, struct{}{}, s.conf.LockRetentionDuration)
-				}
-			}
-		}
-
-		c := command{
-			OpCode:   deleteSessionOpCode,
-			ClientID: i.Key(),
-		}
-
-		b, err := json.Marshal(c)
-		if err != nil {
-			s.logger.Error(
-				fmt.Errorf("on session eviction: marshal: %w", err).Error())
-			return
-		}
-
-		f := s.raft.Apply(b, s.raftTimeout)
-		if f.Error() != nil {
-			s.logger.Error(
-				fmt.Errorf("on session eviction: raft apply: %w", err).Error())
-			return
-		}
-	})
-
-	lockEv.OnEviction(func(
-		ctx context.Context, er ttlcache.EvictionReason, i *ttlcache.Item[string, struct{}]) {
-		s.logger.Debug("lock retention duration exceeded", "lock_name", i.Key())
-
-		c := command{
-			OpCode:   deleteLockOpCode,
-			ClientID: i.Key(),
-		}
-
-		b, err := json.Marshal(c)
-		if err != nil {
-			s.logger.Error(
-				fmt.Errorf("on lock eviction: marshal: %w", err).Error())
-			return
-		}
-
-		f := s.raft.Apply(b, s.raftTimeout)
-		if f.Error() != nil {
-			s.logger.Error(
-				fmt.Errorf("on lock eviction: raft apply: %w", err).Error())
-			return
-		}
-	})
-
-	go sessEv.Start()
-	go lockEv.Start()
-
-	s.sessionEvictor = sessEv
-	s.lockEvictor = lockEv
-
-	return nil
-}
-
-func (s *ServiceImpl) dropCaches() {
-	s.logger.Debug("dropping caches")
-	defer s.logger.Debug("caches dropped")
-
-	s.sessionEvictor.Stop()
-	s.lockEvictor.Stop()
-
-	s.sessionEvictor = nil
-	s.lockEvictor = nil
-}
-
-func (s *ServiceImpl) applyCommand(c command) error {
-	fmt.Println("apply")
+func (s *RaftServiceImpl) applyCommand(c command) error {
 	b, err := json.Marshal(c)
 	if err != nil {
 		return fmt.Errorf("marshal {%d}: %w", c.OpCode, err)
@@ -279,7 +171,7 @@ func (s *ServiceImpl) applyCommand(c command) error {
 	return nil
 }
 
-type fsm ServiceImpl
+type fsm RaftServiceImpl
 
 func (f *fsm) Apply(l *raft.Log) interface{} {
 	var c command
@@ -350,20 +242,3 @@ func (f *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 }
 
 func (f *fsmSnapshot) Release() {}
-
-func loadCache(
-	cache *ttlcache.Cache[string, struct{}],
-	ttl time.Duration,
-	getData func() ([]string, error),
-) error {
-	data, err := getData()
-	if err != nil {
-		return fmt.Errorf("load cache: %w", err)
-	}
-
-	for _, item := range data {
-		cache.Set(item, struct{}{}, ttl)
-	}
-
-	return nil
-}

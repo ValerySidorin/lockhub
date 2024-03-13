@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/ValerySidorin/lockhub"
-	"github.com/ValerySidorin/lockhub/internal/service"
+	"github.com/ValerySidorin/lockhub/internal/raft"
 	"github.com/quic-go/quic-go"
 )
 
@@ -110,7 +110,7 @@ func (c *Config) Parse() (lockhub.ServerConfig, error) {
 		Raft: raftConf,
 		TLS:  tlsConf,
 		QUIC: c.QUIC.Parse(),
-		Service: service.ServiceConfig{
+		RaftService: raft.RaftServiceConfig{
 			SessionKeepAliveInterval: c.SessionKeepAliveInterval,
 			SessionRetentionDuration: c.SessionRetentionDuration,
 			LockRetentionDuration:    c.LockRetentionDuration,

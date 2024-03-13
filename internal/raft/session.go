@@ -1,26 +1,25 @@
-package service
+package raft
 
 import (
 	"fmt"
 	"time"
 
+	"github.com/ValerySidorin/lockhub/internal/dto"
 	"github.com/hashicorp/raft"
 )
 
-func (s *ServiceImpl) ExtendSession(clientID string) error {
+func (s *RaftServiceImpl) ExtendSession(clientID string) error {
 	if s.raft.State() != raft.Leader {
 		return ErrNotLeader
 	}
 
-	s.sessionEvictor.Set(clientID, struct{}{},
-		s.conf.SessionKeepAliveInterval+s.conf.SessionRetentionDuration)
-
+	s.masterCache.setSession(dto.Session{ClientID: clientID})
 	time.Sleep(s.conf.SessionKeepAliveInterval)
 
 	return nil
 }
 
-func (s *ServiceImpl) CreateSessionIfNotExists(clientID string) error {
+func (s *RaftServiceImpl) CreateSessionIfNotExists(clientID string) error {
 	if s.raft.State() != raft.Leader {
 		return ErrNotLeader
 	}
@@ -28,20 +27,8 @@ func (s *ServiceImpl) CreateSessionIfNotExists(clientID string) error {
 	s.smu.Lock()
 	defer s.smu.Unlock()
 
-	existingSess, ok, err := s.store.GetSession(clientID)
-	if err != nil {
-		return fmt.Errorf("get session: %w", err)
-	}
-
+	_, ok := s.masterCache.getSession(clientID)
 	if ok {
-		s.sessionEvictor.Set(clientID, struct{}{},
-			s.conf.SessionKeepAliveInterval+s.conf.SessionRetentionDuration)
-		if s.conf.LockRetentionDuration > 0 {
-			for k := range existingSess.Locks {
-				s.lockEvictor.Set(k, struct{}{},
-					s.conf.SessionKeepAliveInterval+s.conf.LockRetentionDuration)
-			}
-		}
 		return nil
 	}
 
@@ -54,8 +41,7 @@ func (s *ServiceImpl) CreateSessionIfNotExists(clientID string) error {
 		return fmt.Errorf("apply command: %w", err)
 	}
 
-	s.sessionEvictor.Set(clientID, struct{}{},
-		s.conf.SessionKeepAliveInterval+s.conf.SessionRetentionDuration)
+	s.masterCache.setSession(dto.Session{ClientID: clientID})
 
 	return nil
 }

@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/ValerySidorin/lockhub/internal/protocol"
-	"github.com/ValerySidorin/lockhub/internal/service"
+	raft2 "github.com/ValerySidorin/lockhub/internal/raft"
 	"github.com/ValerySidorin/lockhub/store"
 	"github.com/hashicorp/raft"
 	"github.com/quic-go/quic-go"
@@ -23,7 +23,7 @@ type Server struct {
 	raftSnapshotStore raft.SnapshotStore
 	l                 *slog.Logger
 
-	service service.Service
+	raftService raft2.RaftService
 
 	ctx context.Context
 }
@@ -84,13 +84,13 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		return fmt.Errorf("validate server config: %w", err)
 	}
 
-	service := service.New(s.conf.Service, s.store, s.l)
-	if err := service.Open(
+	raftService := raft2.NewRaftService(s.conf.RaftService, s.store, s.l)
+	if err := raftService.Open(
 		s.conf.Raft.NodeID, s.conf.Raft.BindAddr, s.conf.Raft.JoinAddr, s.conf.Raft.Timeout,
 		s.raftLogStore, s.raftStableStore, s.raftSnapshotStore); err != nil {
-		return fmt.Errorf("open service: %w", err)
+		return fmt.Errorf("open raft service: %w", err)
 	}
-	s.service = service
+	s.raftService = raftService
 	s.ctx = ctx
 
 	ln, err := quic.ListenAddr(s.conf.Addr, s.conf.TLS, s.conf.QUIC)
@@ -203,8 +203,8 @@ func (s *Server) handleConnect(conn quic.Connection) (string, error) {
 		return "", fmt.Errorf("read connect: %w", err)
 	}
 
-	fmt.Println(s.service == nil)
-	if err := s.service.CreateSessionIfNotExists(connect.ClientID); err != nil {
+	fmt.Println(s.raftService == nil)
+	if err := s.raftService.CreateSessionIfNotExists(connect.ClientID); err != nil {
 		return "", fmt.Errorf("get or create session: %w", err)
 	}
 
