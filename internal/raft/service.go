@@ -61,11 +61,11 @@ func NewRaftService(
 func (s *RaftServiceImpl) Open(
 	nodeID, bindAddr, joinAddr string, raftTimeout time.Duration,
 	raftLogStore raft.LogStore, raftStableStore raft.StableStore,
-	raftSnapshotStore raft.SnapshotStore, logger *slog.Logger,
+	raftSnapshotStore raft.SnapshotStore,
 ) error {
 	raftCfg := raft.DefaultConfig()
 	raftCfg.LocalID = raft.ServerID(nodeID)
-	raftCfg.Logger = shclog.New(logger)
+	raftCfg.Logger = shclog.New(s.logger)
 	s.raftTimeout = raftTimeout
 
 	addr, err := net.ResolveTCPAddr("tcp", bindAddr)
