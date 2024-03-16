@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/ValerySidorin/lockhub/internal/dto"
@@ -18,6 +19,9 @@ type masterCache struct {
 	sessionKeepAliveInterval time.Duration
 	sessionRetentionDuration time.Duration
 	lockRetentionDuration    time.Duration
+
+	isUp bool
+	sync.Mutex
 
 	sessions *ttlcache.Cache[string, dto.Session]
 	locks    *ttlcache.Cache[string, dto.Lock]
@@ -59,6 +63,14 @@ func (c *masterCache) setSession(s dto.Session) {
 }
 
 func (c *masterCache) load() error {
+	c.Lock()
+	if c.isUp {
+		c.Unlock()
+		return nil
+	}
+	c.isUp = true
+	c.Unlock()
+
 	c.l.Debug("master cache loading...")
 	defer c.l.Debug("master cache loaded")
 
@@ -140,6 +152,14 @@ func (c *masterCache) load() error {
 }
 
 func (c *masterCache) drop() {
+	c.Lock()
+	if !c.isUp {
+		c.Unlock()
+		return
+	}
+	c.isUp = false
+	c.Unlock()
+
 	c.l.Debug("master cache dropping...")
 	c.l.Debug("master cache loaded")
 

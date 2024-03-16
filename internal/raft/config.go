@@ -10,12 +10,18 @@ const (
 	defaultKeepaliveInterval        = 12 * time.Second
 	defaultSessionRetentionDuration = 5 * time.Minute
 	defaultLockRetentionDuration    = 15 * time.Minute
+	defaultTimeout                  = 10 * time.Second
+	defaultMaxRetries               = 5
+	defaultBufLen                   = 1024
 )
 
 type RaftServiceConfig struct {
 	SessionKeepAliveInterval time.Duration
 	SessionRetentionDuration time.Duration
 	LockRetentionDuration    time.Duration
+	Timeout                  time.Duration
+	MaxRetries               int
+	BufLen                   int
 }
 
 func (c *RaftServiceConfig) SetDefaults() {

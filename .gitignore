@@ -20,14 +20,12 @@
 # Go workspace file
 go.work
 
-# Raft test dir
-rafttest/
-
-# Certs test dir
-certs/
+# Sandbox dir
+sandbox/
 
 # VSCode config
 .vscode/
 
 # MacOS hidden dir
 .DS_Store
+

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ValerySidorin/lockhub/store"
+	"github.com/ValerySidorin/shclog"
 	"github.com/hashicorp/raft"
 )
 
@@ -27,8 +28,9 @@ type RaftService interface {
 }
 
 type RaftServiceImpl struct {
-	conf        RaftServiceConfig
-	raft        *raft.Raft
+	conf RaftServiceConfig
+	raft *raft.Raft
+
 	raftTimeout time.Duration
 
 	store store.Storer
@@ -37,7 +39,6 @@ type RaftServiceImpl struct {
 	lmu sync.Mutex
 
 	masterCache *masterCache
-	applicator  *applicator
 
 	logger *slog.Logger
 }
@@ -60,10 +61,11 @@ func NewRaftService(
 func (s *RaftServiceImpl) Open(
 	nodeID, bindAddr, joinAddr string, raftTimeout time.Duration,
 	raftLogStore raft.LogStore, raftStableStore raft.StableStore,
-	raftSnapshotStore raft.SnapshotStore,
+	raftSnapshotStore raft.SnapshotStore, logger *slog.Logger,
 ) error {
 	raftCfg := raft.DefaultConfig()
 	raftCfg.LocalID = raft.ServerID(nodeID)
+	raftCfg.Logger = shclog.New(logger)
 	s.raftTimeout = raftTimeout
 
 	addr, err := net.ResolveTCPAddr("tcp", bindAddr)
@@ -83,7 +85,6 @@ func (s *RaftServiceImpl) Open(
 		return fmt.Errorf("init raft: %w", err)
 	}
 	s.raft = r
-	s.applicator = newApplicator(r, s.raftTimeout)
 
 	if joinAddr == "" {
 		config := raft.Configuration{

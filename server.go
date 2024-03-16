@@ -87,7 +87,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	raftService := raft2.NewRaftService(s.conf.RaftService, s.store, s.l)
 	if err := raftService.Open(
 		s.conf.Raft.NodeID, s.conf.Raft.BindAddr, s.conf.Raft.JoinAddr, s.conf.Raft.Timeout,
-		s.raftLogStore, s.raftStableStore, s.raftSnapshotStore); err != nil {
+		s.raftLogStore, s.raftStableStore, s.raftSnapshotStore, s.l); err != nil {
 		return fmt.Errorf("open raft service: %w", err)
 	}
 	s.raftService = raftService

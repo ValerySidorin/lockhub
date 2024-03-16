@@ -1,8 +1,9 @@
 module github.com/ValerySidorin/lockhub
 
-go 1.22
+go 1.22.1
 
 require (
+	github.com/ValerySidorin/shclog v0.0.0-20240316210012-216b4e7d5a78
 	github.com/hashicorp/raft v1.6.1
 	github.com/jellydator/ttlcache/v3 v3.2.0
 	github.com/quic-go/quic-go v0.41.0
@@ -21,10 +22,6 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
-	github.com/rs/zerolog v1.30.0 // indirect
-	github.com/samber/lo v1.38.1 // indirect
-	github.com/samber/slog-common v0.14.0 // indirect
-	github.com/samber/slog-zerolog/v2 v2.2.0 // indirect
 	go.uber.org/mock v0.3.0 // indirect
 	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1 // indirect

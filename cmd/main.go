@@ -39,7 +39,7 @@ func main() {
 	flag.Parse()
 
 	logLevel := parseLogLevel(conf.Log.Level)
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: logLevel,
 	}))
 	logger.Info("log level set to: " + logLevel.String())
